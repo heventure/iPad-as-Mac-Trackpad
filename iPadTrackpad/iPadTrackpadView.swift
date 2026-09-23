@@ -128,7 +128,9 @@ private struct MacKeyboard:View {
    .background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:18,style:.continuous))
   }
   .frame(height:compact ? 230:340)
- } private func functionRow(unit:CGFloat)->some View {
+ }
+
+ private func functionRow(unit:CGFloat)->some View {
   HStack(spacing:gap) {
    fixedKey(KeySpec(label:"esc",code:53),unit:unit)
    ForEach(1...12,id:\.self){n in fixedKey(KeySpec(label:"F\(n)",code:functionCode(n)),unit:unit,small:true)}
