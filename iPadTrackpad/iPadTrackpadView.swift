@@ -14,7 +14,7 @@ struct iPadTrackpadView:View {
     HStack {
      VStack(alignment:.leading,spacing:3) {
       Text("iPad Remote").font(.title2.bold())
-      Text(peer.statusText).font(.subheadline).foregroundStyle(peer.connectedPeerName == nil ? .secondary:.green)
+      Text(peer.statusText).font(.subheadline).foregroundStyle(peer.connectedPeerName == nil ? Color.secondary : Color.green)
       Text(peer.realtimeStatus).font(.system(.caption,design:.monospaced)).foregroundStyle(.cyan)
      }
      Spacer()
@@ -101,7 +101,7 @@ private struct MacKeyboard:View {
    HStack(spacing:gap){toggle("caps",active:caps,width:1.6){caps.toggle();send(57,flags)};row(home)}
    HStack(spacing:gap){toggle("shift",active:shift,width:1.7){shift.toggle()};row(bottom);toggle("shift",active:shift,width:1.7){shift.toggle()}}
    HStack(spacing:gap){
-    key("fn",63,width:.8);toggle("control",active:control){control.toggle()};toggle("option",active:option){option.toggle()}
+    key("fn",63,width:0.8);toggle("control",active:control){control.toggle()};toggle("option",active:option){option.toggle()}
     toggle("⌘",active:command){command.toggle()};key("",49,width:4.7);toggle("⌘",active:command){command.toggle()}
     toggle("option",active:option){option.toggle()};key("←",123);key("↓",125);key("↑",126);key("→",124)
    }
@@ -142,9 +142,9 @@ private struct KeyboardKeyStyle:ButtonStyle {
  var active=false
  func makeBody(configuration:Configuration)->some View {
   configuration.label.foregroundStyle(.primary)
-   .background(active ? Color.accentColor.opacity(.75):Color.white.opacity(configuration.isPressed ? .22:.12))
+   .background(active ? Color.accentColor.opacity(0.75):Color.white.opacity(configuration.isPressed ? 0.22 : 0.12))
    .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
-   .overlay(RoundedRectangle(cornerRadius:7,style:.continuous).stroke(Color.white.opacity(.12),lineWidth:1))
-   .scaleEffect(configuration.isPressed ? .96:1).animation(.easeOut(duration:.06),value:configuration.isPressed)
+   .overlay(RoundedRectangle(cornerRadius:7,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
+   .scaleEffect(configuration.isPressed ? 0.96 : 1).animation(.easeOut(duration:0.06),value:configuration.isPressed)
  }
 }
