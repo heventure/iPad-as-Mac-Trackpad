@@ -8,6 +8,7 @@ import Network
  @Published private(set)var realtimeStatus="UDP: 启动中…"
 
  private let serviceType="ipadpad"
+ private let udpToken=UUID().uuidString
  private let peerID=MCPeerID(displayName:Host.current().localizedName ?? "Mac")
  private lazy var session=MCSession(peer:peerID,securityIdentity:nil,encryptionPreference:.required)
  private lazy var advertiser=MCNearbyServiceAdvertiser(peer:peerID,discoveryInfo:["role":"mac"],serviceType:serviceType)
@@ -25,7 +26,8 @@ import Network
   do{
    let listener=try NWListener(using:.udp)
    print("[UDP-Mac] listener created port=\(String(describing:listener.port))")
-   listener.service=NWListener.Service(name:nil,type:"_ipadpad-input._udp")
+   listener.service=NWListener.Service(name:udpToken,type:"_ipadpad-input._udp")
+   print("[UDP-Mac] publishing token=\(udpToken)")
    listener.stateUpdateHandler={ [weak self,weak listener] state in
     print("[UDP-Mac] listener state=\(state) port=\(String(describing:listener?.port))")
     Task{@MainActor in
@@ -83,6 +85,12 @@ import Network
   }
  }
 
+ private func sendUDPToken(to peer:MCPeerID){
+  let payload=Data(("UDP_TOKEN:"+udpToken).utf8)
+  do{try session.send(payload,toPeers:[peer],with:.reliable);print("[UDP-Mac] sent pairing token=\(udpToken) to=\(peer.displayName)")}
+  catch{print("[UDP-Mac] token send failed=\(error)")}
+ }
+
  nonisolated private func handleUDPPacket(_ data:Data){
   guard data.count==9,data[0]==1 else{return}
   let b=[UInt8](data)
@@ -100,7 +108,7 @@ extension MacPeerReceiver:MCNearbyServiceAdvertiserDelegate{
  nonisolated func advertiser(_ advertiser:MCNearbyServiceAdvertiser,didNotStartAdvertisingPeer error:Error){Task{@MainActor in self.statusText="广播失败：\(error.localizedDescription)"}}
 }
 extension MacPeerReceiver:MCSessionDelegate{
- nonisolated func session(_ session:MCSession,peer peerID:MCPeerID,didChange state:MCSessionState){Task{@MainActor in switch state{case .connected:self.connectedPeerName=peerID.displayName;self.statusText="已连接 \(peerID.displayName)";case .connecting:self.statusText="正在连接 \(peerID.displayName)…";case .notConnected:self.connectedPeerName=nil;self.statusText="等待 iPad 连接…";@unknown default:self.statusText="连接状态未知"}}}
+ nonisolated func session(_ session:MCSession,peer peerID:MCPeerID,didChange state:MCSessionState){Task{@MainActor in switch state{case .connected:self.connectedPeerName=peerID.displayName;self.statusText="已连接 \(peerID.displayName)";self.sendUDPToken(to:peerID);case .connecting:self.statusText="正在连接 \(peerID.displayName)…";case .notConnected:self.connectedPeerName=nil;self.statusText="等待 iPad 连接…";@unknown default:self.statusText="连接状态未知"}}}
  nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){guard let m=try? PropertyListDecoder().decode(PointerMessage.self,from:data) else{return};MouseController.handle(m)}
  nonisolated func session(_ session:MCSession,didReceive stream:InputStream,withName streamName:String,fromPeer peerID:MCPeerID){}
  nonisolated func session(_ session:MCSession,didStartReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,with progress:Progress){}
