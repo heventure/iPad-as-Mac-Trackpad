@@ -196,7 +196,7 @@ private struct MacKeyboard:View {
      ForEach(bottom){k in flexibleSpecKey(k,height:keyHeight,font:font)}
      modifierKey("shift",active:shift,units:2.25,unit:unit,height:keyHeight,gap:gap,font:font){shift.toggle()}
     }
-    bottomRow(totalWidth:usableWidth,height:bottomHeight,letterHeight:keyHeight,gap:gap,font:font)
+    bottomRow(totalWidth:usableWidth,height:bottomHeight,letterHeight:keyHeight,gap:gap,font:font,minArrowScale:compact ? 0.8 : 1.0)
    }
    .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.center)
    .padding(padding)
@@ -221,12 +221,12 @@ private struct MacKeyboard:View {
   }.buttonStyle(KeyboardKeyStyle()).frame(maxWidth:.infinity).frame(height:height)
  }
 
- private func bottomRow(totalWidth:CGFloat,height:CGFloat,letterHeight:CGFloat,gap:CGFloat,font:CGFloat)->some View {
+ private func bottomRow(totalWidth:CGFloat,height:CGFloat,letterHeight:CGFloat,gap:CGFloat,font:CGFloat,minArrowScale:CGFloat)->some View {
   // Arrow keys must stay easy to hit: each arrow is at least 0.8x a letter-key height,
   // and is square whenever the bottom row has enough height.
   // Two square arrow keys stack vertically, so the row itself is tall enough
   // for the complete inverted-T cluster. Each arrow is >= 0.8x letter height.
-  let arrowSide=max(letterHeight*0.8,min(letterHeight,(height-3)/2))
+  let arrowSide=max(letterHeight*minArrowScale,min(letterHeight,(height-3)/2))
   let arrowWidth=arrowSide*3+6
   let gaps=gap*7
   let remaining=max(1,totalWidth-arrowWidth-gaps)
