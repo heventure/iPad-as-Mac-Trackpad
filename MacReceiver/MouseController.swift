@@ -67,7 +67,7 @@ enum MouseController {
     postKey(code,raw,isDown:true,isRepeat:false)
 
     let timer=DispatchSource.makeTimerSource(queue:keyQueue)
-    timer.schedule(deadline:.now()+.milliseconds(420),repeating:.milliseconds(55),leeway:.milliseconds(8))
+    timer.schedule(deadline:.now() + .milliseconds(420),repeating:.milliseconds(55),leeway:.milliseconds(8))
     timer.setEventHandler {
      guard let heldRaw=heldFlags[code] else{return}
      postKey(code,heldRaw,isDown:true,isRepeat:true)
