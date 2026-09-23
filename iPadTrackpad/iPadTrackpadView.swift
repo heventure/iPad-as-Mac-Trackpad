@@ -194,17 +194,7 @@ private struct MacKeyboard:View {
      ForEach(bottom){k in flexibleSpecKey(k,height:keyHeight,font:font)}
      modifierKey("shift",active:shift,units:2.25,unit:unit,height:keyHeight,gap:gap,font:font){shift.toggle()}
     }
-    HStack(spacing:gap){
-     bottomKey("fn",code:63,height:bottomHeight,font:font,weight:1.15)
-     bottomModifier("ctrl",active:control,height:bottomHeight,font:font,weight:1.25){control.toggle()}
-     bottomModifier("⌥",active:option,height:bottomHeight,font:font,weight:1.2){option.toggle()}
-     bottomModifier("⌘",active:command,height:bottomHeight,font:font,weight:1.25){command.toggle()}
-     bottomKey("",code:49,height:bottomHeight,font:font,weight:4.6)
-     bottomModifier("⌘",active:command,height:bottomHeight,font:font,weight:1.25){command.toggle()}
-     bottomModifier("⌥",active:option,height:bottomHeight,font:font,weight:1.2){option.toggle()}
-     arrowCluster(height:bottomHeight,font:font)
-    }
-    .frame(maxWidth:.infinity)
+    bottomRow(totalWidth:usableWidth,height:bottomHeight,letterHeight:keyHeight,gap:gap,font:font)
    }
    .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.center)
    .padding(padding)
@@ -229,23 +219,42 @@ private struct MacKeyboard:View {
   }.buttonStyle(KeyboardKeyStyle()).frame(maxWidth:.infinity).frame(height:height)
  }
 
- private func arrowCluster(height:CGFloat,font:CGFloat)->some View {
-  // Two half-height keys stack to one square-ish full-height key.
-  let half=(height-3)/2
-  let keySide=max(22,half)
-  return VStack(spacing:3) {
-   HStack(spacing:3) {
-    Spacer(minLength:keySide+3)
-    arrowKey("↑",code:126,width:keySide,height:half,font:font)
-    Spacer(minLength:keySide+3)
-   }
-   HStack(spacing:3) {
-    arrowKey("←",code:123,width:keySide,height:half,font:font)
-    arrowKey("↓",code:125,width:keySide,height:half,font:font)
-    arrowKey("→",code:124,width:keySide,height:half,font:font)
-   }
+ private func bottomRow(totalWidth:CGFloat,height:CGFloat,letterHeight:CGFloat,gap:CGFloat,font:CGFloat)->some View {
+  // Arrow keys must stay easy to hit: each arrow is at least 0.8x a letter-key height,
+  // and is square whenever the bottom row has enough height.
+  let arrowSide=max(letterHeight*0.8,min(letterHeight,height))
+  let arrowWidth=arrowSide*3+6
+  let gaps=gap*7
+  let remaining=max(1,totalWidth-arrowWidth-gaps)
+
+  // Explicit widths prevent the space bar from starving the modifier keys.
+  let weightTotal:CGFloat=12.2
+  let u=remaining/weightTotal
+  return HStack(spacing:gap) {
+   bottomFixedKey("fn",code:63,width:u*1.25,height:height,font:font)
+   bottomFixedModifier("ctrl",active:control,width:u*1.35,height:height,font:font){control.toggle()}
+   bottomFixedModifier("⌥",active:option,width:u*1.25,height:height,font:font){option.toggle()}
+   bottomFixedModifier("⌘",active:command,width:u*1.35,height:height,font:font){command.toggle()}
+   bottomFixedKey("",code:49,width:u*3.8,height:height,font:font)
+   bottomFixedModifier("⌘",active:command,width:u*1.35,height:height,font:font){command.toggle()}
+   bottomFixedModifier("⌥",active:option,width:u*1.25,height:height,font:font){option.toggle()}
+   arrowCluster(side:arrowSide,height:height,font:font)
   }
-  .frame(width:keySide*3+6,height:height)
+  .frame(width:totalWidth,height:height)
+ }
+
+ private func arrowCluster(side:CGFloat,height:CGFloat,font:CGFloat)->some View {
+  // ↑ sits over ↓. Each key is square; the cluster may be taller than the other bottom keys.
+  return ZStack(alignment:.bottom) {
+   HStack(spacing:3) {
+    arrowKey("←",code:123,width:side,height:side,font:font)
+    arrowKey("↓",code:125,width:side,height:side,font:font)
+    arrowKey("→",code:124,width:side,height:side,font:font)
+   }
+   arrowKey("↑",code:126,width:side,height:side,font:font)
+    .offset(y:-(side+3))
+  }
+  .frame(width:side*3+6,height:max(height,side*2+3),alignment:.bottom)
  }
 
  private func arrowKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
@@ -253,22 +262,20 @@ private struct MacKeyboard:View {
    .buttonStyle(KeyboardKeyStyle()).frame(width:width,height:height)
  }
 
- private func bottomKey(_ label:String,code:UInt16,height:CGFloat,font:CGFloat,weight:CGFloat)->some View {
+ private func bottomFixedKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
   Button{keyFeedback();send(code,flags);if shift{shift=false}} label:{
    Text(label).font(.system(size:font,weight:.medium,design:.rounded)).lineLimit(1).frame(maxWidth:.infinity,maxHeight:.infinity)
   }
   .buttonStyle(KeyboardKeyStyle())
-  .frame(maxWidth:.infinity,minHeight:height,maxHeight:height)
-  .layoutPriority(Double(weight))
+  .frame(width:width,height:height)
  }
 
- private func bottomModifier(_ label:String,active:Bool,height:CGFloat,font:CGFloat,weight:CGFloat,action:@escaping()->Void)->some View {
+ private func bottomFixedModifier(_ label:String,active:Bool,width:CGFloat,height:CGFloat,font:CGFloat,action:@escaping()->Void)->some View {
   Button(action:{keyFeedback();action()}) {
    Text(label).font(.system(size:font*0.9,weight:.semibold,design:.rounded)).lineLimit(1).frame(maxWidth:.infinity,maxHeight:.infinity)
   }
   .buttonStyle(KeyboardKeyStyle(active:active))
-  .frame(maxWidth:.infinity,minHeight:height,maxHeight:height)
-  .layoutPriority(Double(weight))
+  .frame(width:width,height:height)
  }
 
  private func flexibleSpecKey(_ spec:KeySpec,height:CGFloat,font:CGFloat)->some View {
