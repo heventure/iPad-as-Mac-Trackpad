@@ -34,9 +34,11 @@ import Network
     }
    }
    listener.newConnectionHandler={ [weak self] connection in
-    guard let self=self else{return}
-    self.udpConnections.append(connection)
-    self.receiveUDP(on:connection)
+    Task { @MainActor [weak self] in
+     guard let self=self else{return}
+     self.udpConnections.append(connection)
+     self.receiveUDP(on:connection)
+    }
    }
    listener.start(queue:udpQueue);udpListener=listener
   }catch{realtimeStatus="UDP: \(error.localizedDescription)"}
