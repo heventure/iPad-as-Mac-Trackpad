@@ -1,7 +1,10 @@
 import SwiftUI
+import Combine
 
 struct MacReceiverView: View {
     @ObservedObject var receiver: MacPeerReceiver
+    @State private var accessibilityGranted = MouseController.hasAccessibilityPermission
+    private let permissionTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 24) {
@@ -16,6 +19,12 @@ struct MacReceiverView: View {
                 Text(receiver.realtimeStatus)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.cyan)
+                Label(
+                    accessibilityGranted ? "辅助功能权限：已授权" : "辅助功能权限：未授权，控制事件将被忽略",
+                    systemImage: accessibilityGranted ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(accessibilityGranted ? Color.green : Color.orange)
             }
 
             GroupBox {
@@ -29,17 +38,26 @@ struct MacReceiverView: View {
             }
 
             HStack {
-                Button("检查/申请辅助功能权限") { MouseController.requestAccessibilityPermission() }
-                    .buttonStyle(.borderedProminent)
+                Button(accessibilityGranted ? "重新检查辅助功能权限" : "检查/申请辅助功能权限") {
+                    MouseController.requestAccessibilityPermission()
+                    accessibilityGranted = MouseController.hasAccessibilityPermission
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accessibilityGranted ? Color.green : Color.orange)
+
                 Button("重新广播") { receiver.restartAdvertising() }
                     .buttonStyle(.bordered)
             }
         }
         .padding(32)
         .onAppear {
-            if !MouseController.hasAccessibilityPermission {
+            accessibilityGranted = MouseController.hasAccessibilityPermission
+            if !accessibilityGranted {
                 MouseController.requestAccessibilityPermission()
             }
+        }
+        .onReceive(permissionTimer) { _ in
+            accessibilityGranted = MouseController.hasAccessibilityPermission
         }
     }
 }

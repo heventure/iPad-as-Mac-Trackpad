@@ -60,8 +60,11 @@ struct iPadTrackpadView:View {
   TrackpadSurface(sensitivity:sensitivity,onMessage:peer.send,onRawMove:peer.sendPointerUDP)
    .frame(maxWidth:.infinity,maxHeight:.infinity)
    .overlay(alignment:.bottomLeading){
-    Text("单指移动 · 轻点左键 · 双指轻点右键 · 双指滚动").font(.footnote).foregroundStyle(.secondary).padding(16).allowsHitTesting(false)
+    if mode==0 {
+     Text("单指移动 · 轻点左键 · 双指轻点右键 · 双指滚动").font(.footnote).foregroundStyle(.secondary).padding(16).allowsHitTesting(false)
+    }
    }
+   .clipped()
  }
 
  private func keyboard(compact:Bool)->some View {
@@ -225,7 +228,7 @@ private struct MacKeyboard:View {
  }
 
  private func flexibleKey(_ label:String,code:UInt16,height:CGFloat,font:CGFloat)->some View {
-  KeyLifecycleButton(code:code,flags:flags,send:send,onPress:{keyFeedback();if shift{shift=false}}) {
+  KeyLifecycleButton(code:code,flags:flags,send:send,accessibilityLabel:label,onPress:{keyFeedback();if shift{shift=false}}) {
    Text(label).font(.system(size:font,weight:.medium,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)
   }.frame(maxWidth:.infinity).frame(height:height)
  }
@@ -276,13 +279,13 @@ private struct MacKeyboard:View {
  }
 
  private func arrowKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
-  KeyLifecycleButton(code:code,flags:flags,send:send,onPress:keyFeedback) {
+  KeyLifecycleButton(code:code,flags:flags,send:send,accessibilityLabel:label,onPress:keyFeedback) {
    Text(label).font(.system(size:font,weight:.medium)).frame(maxWidth:.infinity,maxHeight:.infinity)
   }.frame(width:width,height:height)
  }
 
  private func bottomFixedKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
-  KeyLifecycleButton(code:code,flags:flags,send:send,onPress:{keyFeedback();if shift{shift=false}}) {
+  KeyLifecycleButton(code:code,flags:flags,send:send,accessibilityLabel:label.isEmpty ? "空格" : label,onPress:{keyFeedback();if shift{shift=false}}) {
    Text(label).font(.system(size:font,weight:.medium,design:.rounded)).lineLimit(1).frame(maxWidth:.infinity,maxHeight:.infinity)
   }
   .frame(width:width,height:height)
@@ -297,7 +300,7 @@ private struct MacKeyboard:View {
  }
 
  private func flexibleSpecKey(_ spec:KeySpec,height:CGFloat,font:CGFloat)->some View {
-  KeyLifecycleButton(code:spec.code,flags:flags,send:send,onPress:{keyFeedback();if shift{shift=false}}) {
+  KeyLifecycleButton(code:spec.code,flags:flags,send:send,accessibilityLabel:spec.label,onPress:{keyFeedback();if shift{shift=false}}) {
    Text(spec.label).font(.system(size:font,weight:.medium,design:.rounded)).lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth:.infinity,maxHeight:.infinity)
   }
   .frame(maxWidth:.infinity,minHeight:height,maxHeight:height)
@@ -444,15 +447,17 @@ private struct KeyLifecycleButton<Label:View>:View {
  let code:UInt16
  let flags:UInt64
  let send:(UInt16,UInt64,Bool)->Void
+ let accessibilityLabel:String
  let onPress:()->Void
  let label:Label
  @State private var pressed=false
  @State private var activeFlags:UInt64=0
 
- init(code:UInt16,flags:UInt64,send:@escaping(UInt16,UInt64,Bool)->Void,onPress:@escaping()->Void={},@ViewBuilder label:()->Label) {
+ init(code:UInt16,flags:UInt64,send:@escaping(UInt16,UInt64,Bool)->Void,accessibilityLabel:String,onPress:@escaping()->Void={},@ViewBuilder label:()->Label) {
   self.code=code
   self.flags=flags
   self.send=send
+  self.accessibilityLabel=accessibilityLabel
   self.onPress=onPress
   self.label=label()
  }
@@ -472,6 +477,14 @@ private struct KeyLifecycleButton<Label:View>:View {
      .onEnded { _ in endPress() }
    )
    .onDisappear { endPress() }
+   .accessibilityElement(children:.ignore)
+   .accessibilityLabel(accessibilityLabel)
+   .accessibilityIdentifier("key-\(code)")
+   .accessibilityAddTraits(.isButton)
+   .accessibilityAction {
+    beginPress()
+    endPress()
+   }
  }
 
  private func beginPress() {
