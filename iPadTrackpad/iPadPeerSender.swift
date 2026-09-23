@@ -16,7 +16,7 @@ import UIKit
 
  private let udpQueue=DispatchQueue(label:"ipadpad.udp.sender",qos:.userInteractive)
  private var udpBrowser:NWBrowser?
- private var udpConnection:NWConnection?
+ private var udpConnection:NWConnection?\n private var udpSendCount=0
 
  override init(){super.init();session.delegate=self;browser.delegate=self;browser.startBrowsingForPeers();startUDPDiscovery()}
 
@@ -27,7 +27,7 @@ import UIKit
   guard let connection=udpConnection else{return}
   var data=Data([1])
   appendFloat32(Float32(dx),to:&data);appendFloat32(Float32(dy),to:&data)
-  connection.send(content:data,completion:.contentProcessed({_ in}))
+  udpSendCount += 1\n  if udpSendCount == 1 || udpSendCount % 100 == 0 { realtimeStatus="UDP: 已发送 \(udpSendCount) 个指针包" }\n  connection.send(content:data,completion:.contentProcessed({ [weak self] error in\n   if let error { Task { @MainActor in self?.realtimeStatus="UDP发送失败: \(error.localizedDescription)" } }\n  }))
  }
 
  // Clicks, scrolling and keyboard remain on the encrypted control channel.
