@@ -380,7 +380,7 @@ private struct EightWayArrowJoystick:View {
       let distance=sqrt(dx*dx+dy*dy)
       let scale=distance > radius ? radius/distance : 1
       knob=CGSize(width:dx*scale,height:dy*scale)
-      guard distance > max(10,diameter*0.12) else { lastDirection=nil;return }
+      guard distance > max(10,diameter*0.12) else { lastDirection = nil;return }
       let angle=atan2(dy,dx)
       var sector=Int(round(angle/(.pi/4)))
       if sector < 0 { sector += 8 }
@@ -392,8 +392,8 @@ private struct EightWayArrowJoystick:View {
       }
      }
      .onEnded { _ in
-      knob=.zero
-      lastDirection=nil
+      knob = .zero
+      lastDirection = nil
      }
    )
   }
