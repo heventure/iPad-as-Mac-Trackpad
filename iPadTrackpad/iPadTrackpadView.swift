@@ -154,3 +154,34 @@ private struct MacKeyboard:View {
    .frame(width:max(24,unit*units+gap*(units-1)),height:height)
  }
 
+ private var gap:CGFloat { compact ? 4 : 7 }
+ private var height:CGFloat { compact ? 31 : 42 }
+
+ private var flags:UInt64 {
+  var f:UInt64=0
+  if caps { f |= 1 << 16 }
+  if shift { f |= 1 << 17 }
+  if control { f |= 1 << 18 }
+  if option { f |= 1 << 19 }
+  if command { f |= 1 << 20 }
+  return f
+ }
+
+ private func functionCode(_ n:Int)->UInt16 {
+  [122,120,99,118,96,97,98,100,101,109,103,111][n-1]
+ }
+}
+
+private struct KeyboardKeyStyle:ButtonStyle {
+ var active=false
+ func makeBody(configuration:Configuration)->some View {
+  configuration.label
+   .foregroundStyle(Color.primary)
+   .background(active ? Color.accentColor.opacity(0.75) : Color.white.opacity(configuration.isPressed ? 0.22 : 0.12))
+   .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
+   .overlay(RoundedRectangle(cornerRadius:7,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
+   .scaleEffect(configuration.isPressed ? 0.96 : 1)
+   .animation(.easeOut(duration:0.06),value:configuration.isPressed)
+ }
+}
+
