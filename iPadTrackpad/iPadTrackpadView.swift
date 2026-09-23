@@ -176,10 +176,11 @@ private struct MacKeyboard:View {
    let padding:CGFloat=compact ? 7:10
    let usableHeight=max(120,geo.size.height-padding*2)
    let gap=max(3,min(7,usableHeight*0.018))
-   // Reserve a genuinely taller last row. The arrow cluster must stay inside
-   // this row instead of protruding upward over the Shift row.
-   let keyHeight=max(22,(usableHeight-gap*5)/6.6)
-   let bottomHeight=keyHeight*1.6
+   // Six rows total: five normal rows + one taller bottom row.
+   // Portrait needs two full letter-height square arrow keys stacked vertically.
+   let bottomScale:CGFloat=compact ? 1.6 : 2.08
+   let keyHeight=max(22,(usableHeight-gap*5)/(5+bottomScale))
+   let bottomHeight=keyHeight*bottomScale
    let usableWidth=max(200,geo.size.width-padding*2)
    let unit=max(16,(usableWidth-gap*15)/15.5)
    let font=max(9,min(15,keyHeight*0.34))
@@ -226,7 +227,8 @@ private struct MacKeyboard:View {
   // and is square whenever the bottom row has enough height.
   // Two square arrow keys stack vertically, so the row itself is tall enough
   // for the complete inverted-T cluster. Each arrow is >= 0.8x letter height.
-  let arrowSide=max(letterHeight*minArrowScale,min(letterHeight,(height-3)/2))
+  let availableSide=max(1,(height-3)/2)
+  let arrowSide=min(availableSide,max(letterHeight*minArrowScale,min(letterHeight,availableSide)))
   let arrowWidth=arrowSide*3+6
   let gaps=gap*7
   let remaining=max(1,totalWidth-arrowWidth-gaps)
