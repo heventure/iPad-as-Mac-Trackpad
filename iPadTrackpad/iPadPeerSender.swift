@@ -15,16 +15,13 @@ import UIKit
  private var invitedPeers=Set<MCPeerID>()
 
  private let udpQueue=DispatchQueue(label:"ipadpad.udp.sender",qos:.userInteractive)
- private var udpBrowser:NWBrowser?
  private var udpConnection:NWConnection?
  private var udpSendCount=0
  private var udpSendInFlight=false
- private var expectedUDPToken:String?
- private var discoveredUDP:[NWEndpoint]=[]
 
- override init(){super.init();print("[UDP-iPad] init");session.delegate=self;browser.delegate=self;browser.startBrowsingForPeers();startUDPDiscovery()}
+ override init(){super.init();print("[UDP-iPad] init");session.delegate=self;browser.delegate=self;browser.startBrowsingForPeers()}
 
- func stop(){browser.stopBrowsingForPeers();session.disconnect();udpBrowser?.cancel();udpConnection?.cancel()}
+ func stop(){browser.stopBrowsingForPeers();session.disconnect();udpConnection?.cancel()}
 
  // Pointer movement bypasses MultipeerConnectivity completely.
  func sendPointerUDP(dx:Double,dy:Double){
@@ -50,35 +47,6 @@ import UIKit
  private func appendFloat32(_ value:Float32,to data:inout Data){
   var bits=value.bitPattern.littleEndian
   withUnsafeBytes(of:&bits){data.append(contentsOf:$0)}
- }
-
- private func startUDPDiscovery(){
-  let b=NWBrowser(for:.bonjour(type:"_ipadpad-input._udp",domain:nil),using:.udp)
-  b.browseResultsChangedHandler={ [weak self] results,changes in
-   print("[UDP-iPad] browse results=\(results.count) changes=\(changes)")
-   for result in results { print("[UDP-iPad] discovered endpoint=\(result.endpoint) interfaces=\(result.interfaces)") }
-   let endpoints=results.map{$0.endpoint}
-   Task{@MainActor in
-    guard let self else{return}
-    self.discoveredUDP=endpoints
-    self.connectMatchingUDPIfPossible()
-   }
-  }
-  b.stateUpdateHandler={ [weak self] state in
-   print("[UDP-iPad] browser state=\(state)")
-   if case let .failed(error)=state { Task{@MainActor in self?.realtimeStatus="UDP: \(error.localizedDescription)"} }
-  }
-  b.start(queue:udpQueue);udpBrowser=b
- }
-
- private func connectMatchingUDPIfPossible(){
-  guard let token=expectedUDPToken else{print("[UDP-iPad] waiting for MC pairing token");return}
-  guard let endpoint=discoveredUDP.first(where:{ endpoint in
-   if case let .service(name,_,_,_)=endpoint{return name==token}
-   return false
-  }) else{realtimeStatus="UDP: 等待匹配的 Mac 服务…";print("[UDP-iPad] no Bonjour endpoint matches token=\(token)");return}
-  print("[UDP-iPad] token matched endpoint=\(endpoint)")
-  connectUDP(to:endpoint)
  }
 
  private func connectUDP(to endpoint:NWEndpoint){
@@ -109,9 +77,9 @@ extension iPadPeerSender:MCNearbyServiceBrowserDelegate{
 extension iPadPeerSender:MCSessionDelegate{
  nonisolated func session(_ session:MCSession,peer peerID:MCPeerID,didChange state:MCSessionState){Task{@MainActor in switch state{case .connected:self.connectedPeerName=peerID.displayName;self.statusText="已连接 \(peerID.displayName)";case .connecting:self.statusText="正在连接 \(peerID.displayName)…";case .notConnected:self.connectedPeerName=nil;self.invitedPeers.remove(peerID);self.statusText="正在搜索 Mac…";@unknown default:self.statusText="连接状态未知"}}}
  nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){
-  guard let text=String(data:data,encoding:.utf8),text.hasPrefix("UDP_TOKEN:") else{return}
-  let token=String(text.dropFirst("UDP_TOKEN:".count))
-  Task{@MainActor in self.expectedUDPToken=token;self.realtimeStatus="UDP: 已获得配对信息";print("[UDP-iPad] received pairing token=\(token) from=\(peerID.displayName)");self.connectMatchingUDPIfPossible()}
+  guard let text=String(data:data,encoding:.utf8),text.hasPrefix("UDP_ENDPOINT:"),let portValue=UInt16(text.dropFirst("UDP_ENDPOINT:".count)),let port=NWEndpoint.Port(rawValue:portValue) else{return}
+  let endpoint=NWEndpoint.hostPort(host:.ipv4(.broadcast),port:port)
+  Task{@MainActor in self.realtimeStatus="UDP: 已获得端口 \(portValue)";print("[UDP-iPad] received UDP port=\(portValue) from=\(peerID.displayName)");self.connectUDP(to:endpoint)}
  }
  nonisolated func session(_ session:MCSession,didReceive stream:InputStream,withName streamName:String,fromPeer peerID:MCPeerID){}
  nonisolated func session(_ session:MCSession,didStartReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,with progress:Progress){}
