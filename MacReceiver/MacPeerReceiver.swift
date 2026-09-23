@@ -19,7 +19,7 @@ import Darwin
  private var udpConnectionCount=0
 
  override init(){super.init();print("[UDP-Mac] init");session.delegate=self;advertiser.delegate=self;advertiser.startAdvertisingPeer();startUDPListener()}
- func stop(){advertiser.stopAdvertisingPeer();session.disconnect();udpListener?.cancel()}
+ func stop(){MouseController.releaseAllKeys();advertiser.stopAdvertisingPeer();session.disconnect();udpListener?.cancel()}
  func restartAdvertising(){advertiser.stopAdvertisingPeer();advertiser.startAdvertisingPeer();if connectedPeerName==nil{statusText="等待 iPad 连接…"}}
 
  private func startUDPListener(){
@@ -140,7 +140,7 @@ extension MacPeerReceiver:MCNearbyServiceAdvertiserDelegate{
  nonisolated func advertiser(_ advertiser:MCNearbyServiceAdvertiser,didNotStartAdvertisingPeer error:Error){Task{@MainActor in self.statusText="广播失败：\(error.localizedDescription)"}}
 }
 extension MacPeerReceiver:MCSessionDelegate{
- nonisolated func session(_ session:MCSession,peer peerID:MCPeerID,didChange state:MCSessionState){Task{@MainActor in switch state{case .connected:self.connectedPeerName=peerID.displayName;self.statusText="已连接 \(peerID.displayName)";self.sendUDPEndpoint(to:peerID);case .connecting:self.statusText="正在连接 \(peerID.displayName)…";case .notConnected:self.connectedPeerName=nil;self.statusText="等待 iPad 连接…";@unknown default:self.statusText="连接状态未知"}}}
+ nonisolated func session(_ session:MCSession,peer peerID:MCPeerID,didChange state:MCSessionState){Task{@MainActor in switch state{case .connected:self.connectedPeerName=peerID.displayName;self.statusText="已连接 \(peerID.displayName)";self.sendUDPEndpoint(to:peerID);case .connecting:self.statusText="正在连接 \(peerID.displayName)…";case .notConnected:MouseController.releaseAllKeys();self.connectedPeerName=nil;self.statusText="等待 iPad 连接…";@unknown default:self.statusText="连接状态未知"}}}
  nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){guard let m=try? PropertyListDecoder().decode(PointerMessage.self,from:data) else{return};MouseController.handle(m)}
  nonisolated func session(_ session:MCSession,didReceive stream:InputStream,withName streamName:String,fromPeer peerID:MCPeerID){}
  nonisolated func session(_ session:MCSession,didStartReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,with progress:Progress){}

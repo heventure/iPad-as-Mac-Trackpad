@@ -1,9 +1,37 @@
 import AppKit
 import ApplicationServices
+
 enum MouseController {
  static var hasAccessibilityPermission:Bool{AXIsProcessTrusted()}
  static func requestAccessibilityPermission(){let options=[kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String:true] as CFDictionary;_ = AXIsProcessTrustedWithOptions(options)}
- static func handle(_ m:PointerMessage){guard hasAccessibilityPermission else{return};switch m{case let .move(dx,dy):move(dx:dx,dy:dy);case let .scroll(dx,dy):scroll(dx:dx,dy:dy);case .leftClick:click(.left);case .rightClick:click(.right);case let .text(s):type(s);case let .key(code,flags):key(code,flags)}}
+
+ private static let keyQueue=DispatchQueue(label:"ipadpad.keyboard.events",qos:.userInteractive)
+ private static var heldFlags:[UInt16:UInt64]=[:]
+ private static var repeatTimers:[UInt16:DispatchSourceTimer]=[:]
+
+ static func handle(_ m:PointerMessage){
+  guard hasAccessibilityPermission else{return}
+  switch m{
+  case let .move(dx,dy):move(dx:dx,dy:dy)
+  case let .scroll(dx,dy):scroll(dx:dx,dy:dy)
+  case .leftClick:click(.left)
+  case .rightClick:click(.right)
+  case let .text(s):type(s)
+  case let .key(code,flags,isDown):key(code,flags,isDown)
+  }
+ }
+
+ static func releaseAllKeys(){
+  keyQueue.async {
+   for (code,raw) in heldFlags {
+    repeatTimers.removeValue(forKey:code)?.cancel()
+    postKey(code,raw,isDown:false,isRepeat:false)
+   }
+   repeatTimers.removeAll()
+   heldFlags.removeAll()
+  }
+ }
+
  private static func current()->CGPoint{CGEvent(source:nil)?.location ?? .zero}
  private static func move(dx:Double,dy:Double){let speed=hypot(dx,dy);let gain=1.0+min(1.2,speed/18.0);let p=current();CGEvent(mouseEventSource:nil,mouseType:.mouseMoved,mouseCursorPosition:CGPoint(x:p.x+dx*gain,y:p.y+dy*gain),mouseButton:.left)?.post(tap:.cghidEventTap)}
  private static func click(_ b:CGMouseButton){let p=current(),d:CGEventType=b == .right ? .rightMouseDown:.leftMouseDown,u:CGEventType=b == .right ? .rightMouseUp:.leftMouseUp;CGEvent(mouseEventSource:nil,mouseType:d,mouseCursorPosition:p,mouseButton:b)?.post(tap:.cghidEventTap);CGEvent(mouseEventSource:nil,mouseType:u,mouseCursorPosition:p,mouseButton:b)?.post(tap:.cghidEventTap)}
@@ -30,5 +58,34 @@ enum MouseController {
    index=end
   }
  }
- private static func key(_ code:UInt16,_ raw:UInt64){let flags=CGEventFlags(rawValue:raw);let d=CGEvent(keyboardEventSource:nil,virtualKey:CGKeyCode(code),keyDown:true);d?.flags=flags;d?.post(tap:.cghidEventTap);let u=CGEvent(keyboardEventSource:nil,virtualKey:CGKeyCode(code),keyDown:false);u?.flags=flags;u?.post(tap:.cghidEventTap)}
+
+ private static func key(_ code:UInt16,_ raw:UInt64,_ isDown:Bool){
+  keyQueue.async {
+   if isDown {
+    guard heldFlags[code] == nil else{return}
+    heldFlags[code]=raw
+    postKey(code,raw,isDown:true,isRepeat:false)
+
+    let timer=DispatchSource.makeTimerSource(queue:keyQueue)
+    timer.schedule(deadline:.now()+.milliseconds(420),repeating:.milliseconds(55),leeway:.milliseconds(8))
+    timer.setEventHandler {
+     guard let heldRaw=heldFlags[code] else{return}
+     postKey(code,heldRaw,isDown:true,isRepeat:true)
+    }
+    repeatTimers[code]=timer
+    timer.resume()
+   } else {
+    let heldRaw=heldFlags.removeValue(forKey:code) ?? raw
+    repeatTimers.removeValue(forKey:code)?.cancel()
+    postKey(code,heldRaw,isDown:false,isRepeat:false)
+   }
+  }
+ }
+
+ private static func postKey(_ code:UInt16,_ raw:UInt64,isDown:Bool,isRepeat:Bool){
+  guard let event=CGEvent(keyboardEventSource:nil,virtualKey:CGKeyCode(code),keyDown:isDown) else{return}
+  event.flags=CGEventFlags(rawValue:raw)
+  event.setIntegerValueField(.keyboardEventAutorepeat,value:isRepeat ? 1:0)
+  event.post(tap:.cghidEventTap)
+ }
 }

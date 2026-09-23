@@ -6,9 +6,9 @@ enum PointerMessage: Codable {
     case leftClick
     case rightClick
     case text(String)
-    case key(UInt16, UInt64)
+    case key(UInt16, UInt64, Bool)
 
-    private enum CodingKeys: String, CodingKey { case type, dx, dy, text, keyCode, flags }
+    private enum CodingKeys: String, CodingKey { case type, dx, dy, text, keyCode, flags, isDown }
     private enum Kind: String, Codable { case move, scroll, leftClick, rightClick, text, key }
 
     init(from decoder: Decoder) throws {
@@ -19,7 +19,12 @@ enum PointerMessage: Codable {
         case .leftClick: self = .leftClick
         case .rightClick: self = .rightClick
         case .text: self = .text(try c.decode(String.self, forKey: .text))
-        case .key: self = .key(try c.decode(UInt16.self, forKey: .keyCode), try c.decode(UInt64.self, forKey: .flags))
+        case .key:
+            self = .key(
+                try c.decode(UInt16.self, forKey: .keyCode),
+                try c.decode(UInt64.self, forKey: .flags),
+                try c.decode(Bool.self, forKey: .isDown)
+            )
         }
     }
 
@@ -31,7 +36,11 @@ enum PointerMessage: Codable {
         case .leftClick: try c.encode(Kind.leftClick,forKey:.type)
         case .rightClick: try c.encode(Kind.rightClick,forKey:.type)
         case let .text(text): try c.encode(Kind.text,forKey:.type); try c.encode(text,forKey:.text)
-        case let .key(code,flags): try c.encode(Kind.key,forKey:.type); try c.encode(code,forKey:.keyCode); try c.encode(flags,forKey:.flags)
+        case let .key(code, flags, isDown):
+            try c.encode(Kind.key, forKey:.type)
+            try c.encode(code, forKey:.keyCode)
+            try c.encode(flags, forKey:.flags)
+            try c.encode(isDown, forKey:.isDown)
         }
     }
 }

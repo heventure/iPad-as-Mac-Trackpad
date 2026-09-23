@@ -65,7 +65,7 @@ struct iPadTrackpadView:View {
  }
 
  private func keyboard(compact:Bool)->some View {
-  MacKeyboard(compact:compact,joystickArrows:joystickArrows){code,flags in peer.send(.key(code,flags))}
+  MacKeyboard(compact:compact,joystickArrows:joystickArrows){code,flags,isDown in peer.send(.key(code,flags,isDown))}
    .frame(maxWidth:.infinity,maxHeight:.infinity)
    .layoutPriority(1)
  }
@@ -153,7 +153,7 @@ private struct KeySpec:Identifiable {
 private struct MacKeyboard:View {
  let compact:Bool
  let joystickArrows:Bool
- let send:(UInt16,UInt64)->Void
+ let send:(UInt16,UInt64,Bool)->Void
  @State private var shift=false
  @State private var control=false
  @State private var option=false
@@ -197,7 +197,7 @@ private struct MacKeyboard:View {
     keyboardRow(number,unit:unit,height:keyHeight,gap:gap,font:font)
     HStack(spacing:gap){ForEach(qwerty){k in flexibleSpecKey(k,height:keyHeight,font:font)}}
     HStack(spacing:gap){
-     modifierKey("caps",active:caps,units:1.75,unit:unit,height:keyHeight,gap:gap,font:font){caps.toggle();send(57,flags)}
+     modifierKey("caps",active:caps,units:1.75,unit:unit,height:keyHeight,gap:gap,font:font){caps.toggle();tapKey(57,flags)}
      ForEach(home){k in flexibleSpecKey(k,height:keyHeight,font:font)}
     }
     HStack(spacing:gap){
@@ -225,9 +225,9 @@ private struct MacKeyboard:View {
  }
 
  private func flexibleKey(_ label:String,code:UInt16,height:CGFloat,font:CGFloat)->some View {
-  Button{keyFeedback();send(code,flags);if shift{shift=false}} label:{
+  KeyLifecycleButton(code:code,flags:flags,send:send,onPress:{keyFeedback();if shift{shift=false}}) {
    Text(label).font(.system(size:font,weight:.medium,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)
-  }.buttonStyle(KeyboardKeyStyle()).frame(maxWidth:.infinity).frame(height:height)
+  }.frame(maxWidth:.infinity).frame(height:height)
  }
 
  private func bottomRow(totalWidth:CGFloat,height:CGFloat,letterHeight:CGFloat,gap:CGFloat,font:CGFloat,minArrowScale:CGFloat)->some View {
@@ -276,15 +276,15 @@ private struct MacKeyboard:View {
  }
 
  private func arrowKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
-  Button{keyFeedback();send(code,flags)} label:{Text(label).font(.system(size:font,weight:.medium)).frame(maxWidth:.infinity,maxHeight:.infinity)}
-   .buttonStyle(KeyboardKeyStyle()).frame(width:width,height:height)
+  KeyLifecycleButton(code:code,flags:flags,send:send,onPress:keyFeedback) {
+   Text(label).font(.system(size:font,weight:.medium)).frame(maxWidth:.infinity,maxHeight:.infinity)
+  }.frame(width:width,height:height)
  }
 
  private func bottomFixedKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
-  Button{keyFeedback();send(code,flags);if shift{shift=false}} label:{
+  KeyLifecycleButton(code:code,flags:flags,send:send,onPress:{keyFeedback();if shift{shift=false}}) {
    Text(label).font(.system(size:font,weight:.medium,design:.rounded)).lineLimit(1).frame(maxWidth:.infinity,maxHeight:.infinity)
   }
-  .buttonStyle(KeyboardKeyStyle())
   .frame(width:width,height:height)
  }
 
@@ -297,10 +297,9 @@ private struct MacKeyboard:View {
  }
 
  private func flexibleSpecKey(_ spec:KeySpec,height:CGFloat,font:CGFloat)->some View {
-  Button{keyFeedback();send(spec.code,flags);if shift{shift=false}} label:{
+  KeyLifecycleButton(code:spec.code,flags:flags,send:send,onPress:{keyFeedback();if shift{shift=false}}) {
    Text(spec.label).font(.system(size:font,weight:.medium,design:.rounded)).lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth:.infinity,maxHeight:.infinity)
   }
-  .buttonStyle(KeyboardKeyStyle())
   .frame(maxWidth:.infinity,minHeight:height,maxHeight:height)
  }
 
@@ -308,11 +307,9 @@ private struct MacKeyboard:View {
   UIImpactFeedbackGenerator(style:.light).impactOccurred(intensity:0.65)
  }
 
- private func fixedKey(_ spec:KeySpec,unit:CGFloat,height:CGFloat,gap:CGFloat,font:CGFloat)->some View {
-  Button{keyFeedback();send(spec.code,flags);if shift{shift=false}} label:{
-   Text(spec.label).font(.system(size:font,weight:.medium,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)
-  }.buttonStyle(KeyboardKeyStyle())
-   .frame(width:max(18,unit*spec.width+gap*(spec.width-1)),height:height)
+ private func tapKey(_ code:UInt16,_ rawFlags:UInt64) {
+  send(code,rawFlags,true)
+  send(code,rawFlags,false)
  }
 
  private func modifierKey(_ label:String,active:Bool,units:CGFloat,unit:CGFloat,height:CGFloat,gap:CGFloat,font:CGFloat,action:@escaping()->Void)->some View {
@@ -340,11 +337,11 @@ private struct MacKeyboard:View {
 private struct EightWayArrowJoystick:View {
  let width:CGFloat
  let height:CGFloat
- let send:(UInt16,UInt64)->Void
+ let send:(UInt16,UInt64,Bool)->Void
  let flags:UInt64
  @State private var knob=CGSize.zero
- @State private var lastDirection:Int?
- @State private var lastSentAt=Date.distantPast
+ @State private var activeCodes:[UInt16]=[]
+ @State private var activeFlags:UInt64=0
 
  var body:some View {
   GeometryReader { geo in
@@ -380,39 +377,115 @@ private struct EightWayArrowJoystick:View {
       let distance=sqrt(dx*dx+dy*dy)
       let scale=distance > radius ? radius/distance : 1
       knob=CGSize(width:dx*scale,height:dy*scale)
-      guard distance > max(10,diameter*0.12) else { lastDirection = nil;return }
+      guard distance > max(10,diameter*0.12) else {
+       updateDirection(nil)
+       return
+      }
       let angle=atan2(dy,dx)
       var sector=Int(round(angle/(.pi/4)))
       if sector < 0 { sector += 8 }
-      if sector != lastDirection || Date().timeIntervalSince(lastSentAt) > 0.11 {
-       sendDirection(sector)
-       lastDirection=sector
-       lastSentAt=Date()
-       UIImpactFeedbackGenerator(style:.light).impactOccurred(intensity:0.55)
-      }
+      updateDirection(sector)
      }
      .onEnded { _ in
+      releaseActiveKeys()
       knob = .zero
-      lastDirection = nil
      }
    )
   }
   .frame(width:width,height:height)
+  .onDisappear { releaseActiveKeys() }
   .accessibilityLabel("八向方向摇杆")
  }
 
- private func sendDirection(_ direction:Int) {
-  // atan2 sectors: right, down-right, down, down-left, left, up-left, up, up-right.
-  switch direction {
-  case 0: send(124,flags)
-  case 1: send(125,flags);send(124,flags)
-  case 2: send(125,flags)
-  case 3: send(125,flags);send(123,flags)
-  case 4: send(123,flags)
-  case 5: send(126,flags);send(123,flags)
-  case 6: send(126,flags)
-  default: send(126,flags);send(124,flags)
+ private func updateDirection(_ direction:Int?) {
+  let next=direction.map { directionCodes($0) } ?? []
+  guard next != activeCodes else{return}
+  if activeCodes.isEmpty && !next.isEmpty { activeFlags=flags }
+
+  for code in activeCodes where !next.contains(code) {
+   send(code,activeFlags,false)
   }
+  for code in next where !activeCodes.contains(code) {
+   send(code,activeFlags,true)
+  }
+
+  activeCodes=next
+  if next.isEmpty {
+   activeFlags=0
+  } else {
+   UIImpactFeedbackGenerator(style:.light).impactOccurred(intensity:0.55)
+  }
+ }
+
+ private func releaseActiveKeys() {
+  guard !activeCodes.isEmpty else{return}
+  for code in activeCodes {
+   send(code,activeFlags,false)
+  }
+  activeCodes=[]
+  activeFlags=0
+ }
+
+ private func directionCodes(_ direction:Int)->[UInt16] {
+  switch direction {
+  case 0:return [124]
+  case 1:return [125,124]
+  case 2:return [125]
+  case 3:return [125,123]
+  case 4:return [123]
+  case 5:return [126,123]
+  case 6:return [126]
+  default:return [126,124]
+  }
+ }
+}
+
+private struct KeyLifecycleButton<Label:View>:View {
+ let code:UInt16
+ let flags:UInt64
+ let send:(UInt16,UInt64,Bool)->Void
+ let onPress:()->Void
+ let label:Label
+ @State private var pressed=false
+ @State private var activeFlags:UInt64=0
+
+ init(code:UInt16,flags:UInt64,send:@escaping(UInt16,UInt64,Bool)->Void,onPress:@escaping()->Void={},@ViewBuilder label:()->Label) {
+  self.code=code
+  self.flags=flags
+  self.send=send
+  self.onPress=onPress
+  self.label=label()
+ }
+
+ var body:some View {
+  label
+   .foregroundStyle(Color.primary)
+   .background(Color.white.opacity(pressed ? 0.22:0.12))
+   .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
+   .overlay(RoundedRectangle(cornerRadius:7,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
+   .scaleEffect(pressed ? 0.96:1)
+   .animation(.easeOut(duration:0.06),value:pressed)
+   .contentShape(Rectangle())
+   .gesture(
+    DragGesture(minimumDistance:0)
+     .onChanged { _ in beginPress() }
+     .onEnded { _ in endPress() }
+   )
+   .onDisappear { endPress() }
+ }
+
+ private func beginPress() {
+  guard !pressed else{return}
+  activeFlags=flags
+  pressed=true
+  onPress()
+  send(code,activeFlags,true)
+ }
+
+ private func endPress() {
+  guard pressed else{return}
+  send(code,activeFlags,false)
+  pressed=false
  }
 }
 
