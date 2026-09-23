@@ -12,7 +12,9 @@ import Network
  private lazy var session=MCSession(peer:peerID,securityIdentity:nil,encryptionPreference:.required)
  private lazy var advertiser=MCNearbyServiceAdvertiser(peer:peerID,discoveryInfo:["role":"mac"],serviceType:serviceType)
  private let udpQueue=DispatchQueue(label:"ipadpad.udp.receiver",qos:.userInteractive)
- private var udpListener:NWListener?\n private var udpConnections:[NWConnection]=[]\n private var udpPacketCount=0
+ private var udpListener:NWListener?
+ private var udpConnections:[NWConnection]=[]
+ private var udpPacketCount=0
 
  override init(){super.init();session.delegate=self;advertiser.delegate=self;advertiser.startAdvertisingPeer();startUDPListener()}
  func stop(){advertiser.stopAdvertisingPeer();session.disconnect();udpListener?.cancel()}
@@ -31,7 +33,11 @@ import Network
      }
     }
    }
-   listener.newConnectionHandler={ [weak self] connection in\n    guard let self=self else{return}\n    self.udpConnections.append(connection)\n    self.receiveUDP(on:connection)\n   }
+   listener.newConnectionHandler={ [weak self] connection in
+    guard let self=self else{return}
+    self.udpConnections.append(connection)
+    self.receiveUDP(on:connection)
+   }
    listener.start(queue:udpQueue);udpListener=listener
   }catch{realtimeStatus="UDP: \(error.localizedDescription)"}
  }
@@ -52,7 +58,11 @@ import Network
   let b=[UInt8](data)
   let xBits=UInt32(b[1]) | UInt32(b[2])<<8 | UInt32(b[3])<<16 | UInt32(b[4])<<24
   let yBits=UInt32(b[5]) | UInt32(b[6])<<8 | UInt32(b[7])<<16 | UInt32(b[8])<<24
-  MouseController.handle(.move(dx:Double(Float32(bitPattern:xBits)),dy:Double(Float32(bitPattern:yBits))))\n  Task{@MainActor in\n   self.udpPacketCount += 1\n   if self.udpPacketCount == 1 { self.realtimeStatus="UDP: 正在接收指针数据" }\n  }
+  MouseController.handle(.move(dx:Double(Float32(bitPattern:xBits)),dy:Double(Float32(bitPattern:yBits))))
+  Task{@MainActor in
+   self.udpPacketCount += 1
+   if self.udpPacketCount == 1 { self.realtimeStatus="UDP: 正在接收指针数据" }
+  }
  }
 }
 extension MacPeerReceiver:MCNearbyServiceAdvertiserDelegate{
