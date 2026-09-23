@@ -72,6 +72,7 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
  @ViewBuilder let trackpad:()->Trackpad
  @ViewBuilder let keyboard:()->Keyboard
  @State private var dragStartShare:CGFloat?
+ @State private var dragging=false
 
  var body:some View {
   GeometryReader { geo in
@@ -90,7 +91,7 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
       dragHandle(horizontal:false,total:available)
       keyboard().frame(width:keyboardWidth,height:geo.size.height)
      }
-    }
+    }.transaction { if dragging { $0.animation=nil } }
    } else {
     let divider:CGFloat=18
     let available=max(1,geo.size.height-divider)
@@ -106,7 +107,7 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
       dragHandle(horizontal:true,total:available)
       keyboard().frame(width:geo.size.width,height:keyboardHeight)
      }
-    }
+    }.transaction { if dragging { $0.animation=nil } }
    }
   }
  }
@@ -123,6 +124,7 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
    .onChanged { value in
     if dragStartShare == nil {
      dragStartShare=landscape ? landscapeKeyboardShare:portraitTrackpadShare
+     dragging=true
     }
     let start=dragStartShare ?? 0.618
     if landscape {
@@ -135,7 +137,7 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
      portraitTrackpadShare=min(0.72,max(0.50,start+sign*value.translation.height/total))
     }
    }
-   .onEnded { _ in dragStartShare=nil }
+   .onEnded { _ in dragStartShare=nil;dragging=false }
   )
   .accessibilityLabel("调整触控板和键盘比例")
  }
@@ -185,24 +187,24 @@ private struct MacKeyboard:View {
    VStack(spacing:gap) {
     functionRow(unit:unit,height:keyHeight,gap:gap,font:font)
     keyboardRow(number,unit:unit,height:keyHeight,gap:gap,font:font)
-    HStack(spacing:gap){ForEach(qwerty){k in fixedKey(k,unit:unit,height:keyHeight,gap:gap,font:font)}}
+    HStack(spacing:gap){ForEach(qwerty){k in flexibleSpecKey(k,height:keyHeight,font:font)}}
     HStack(spacing:gap){
      modifierKey("caps",active:caps,units:1.75,unit:unit,height:keyHeight,gap:gap,font:font){caps.toggle();send(57,flags)}
-     ForEach(home){k in fixedKey(k,unit:unit,height:keyHeight,gap:gap,font:font)}
+     ForEach(home){k in flexibleSpecKey(k,height:keyHeight,font:font)}
     }
     HStack(spacing:gap){
      modifierKey("shift",active:shift,units:2.25,unit:unit,height:keyHeight,gap:gap,font:font){shift.toggle()}
-     ForEach(bottom){k in fixedKey(k,unit:unit,height:keyHeight,gap:gap,font:font)}
+     ForEach(bottom){k in flexibleSpecKey(k,height:keyHeight,font:font)}
      modifierKey("shift",active:shift,units:2.25,unit:unit,height:keyHeight,gap:gap,font:font){shift.toggle()}
     }
     HStack(spacing:gap){
      fixedKey(KeySpec(label:"fn",code:63,width:0.8),unit:unit,height:keyHeight,gap:gap,font:font)
-     modifierKey("control",active:control,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){control.toggle()}
-     modifierKey("option",active:option,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){option.toggle()}
+     modifierKey("ctrl",active:control,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){control.toggle()}
+     modifierKey("⌥",active:option,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){option.toggle()}
      modifierKey("⌘",active:command,units:1.2,unit:unit,height:keyHeight,gap:gap,font:font){command.toggle()}
      fixedKey(KeySpec(label:"",code:49,width:4.2),unit:unit,height:keyHeight,gap:gap,font:font)
      modifierKey("⌘",active:command,units:1.2,unit:unit,height:keyHeight,gap:gap,font:font){command.toggle()}
-     modifierKey("option",active:option,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){option.toggle()}
+     modifierKey("⌥",active:option,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){option.toggle()}
      arrowCluster(unit:unit,height:keyHeight,font:font)
     }
    }
@@ -220,11 +222,11 @@ private struct MacKeyboard:View {
  }
 
  private func keyboardRow(_ keys:[KeySpec],unit:CGFloat,height:CGFloat,gap:CGFloat,font:CGFloat)->some View {
-  HStack(spacing:gap){ForEach(keys){k in fixedKey(k,unit:unit,height:height,gap:gap,font:font)}}
+  HStack(spacing:gap){ForEach(keys){k in flexibleSpecKey(k,height:height,font:font)}}
  }
 
  private func flexibleKey(_ label:String,code:UInt16,height:CGFloat,font:CGFloat)->some View {
-  Button{send(code,flags);if shift{shift=false}} label:{
+  Button{keyFeedback();send(code,flags);if shift{shift=false}} label:{
    Text(label).font(.system(size:font,weight:.medium,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)
   }.buttonStyle(KeyboardKeyStyle()).frame(maxWidth:.infinity).frame(height:height)
  }
@@ -242,19 +244,31 @@ private struct MacKeyboard:View {
  }
 
  private func arrowKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
-  Button{send(code,flags)} label:{Text(label).font(.system(size:font,weight:.medium)).frame(maxWidth:.infinity,maxHeight:.infinity)}
+  Button{keyFeedback();send(code,flags)} label:{Text(label).font(.system(size:font,weight:.medium)).frame(maxWidth:.infinity,maxHeight:.infinity)}
    .buttonStyle(KeyboardKeyStyle()).frame(width:width,height:height)
  }
 
+ private func flexibleSpecKey(_ spec:KeySpec,height:CGFloat,font:CGFloat)->some View {
+  Button{keyFeedback();send(spec.code,flags);if shift{shift=false}} label:{
+   Text(spec.label).font(.system(size:font,weight:.medium,design:.rounded)).lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth:.infinity,maxHeight:.infinity)
+  }
+  .buttonStyle(KeyboardKeyStyle())
+  .frame(maxWidth:.infinity,minHeight:height,maxHeight:height)
+ }
+
+ private func keyFeedback() {
+  UIImpactFeedbackGenerator(style:.light).impactOccurred(intensity:0.65)
+ }
+
  private func fixedKey(_ spec:KeySpec,unit:CGFloat,height:CGFloat,gap:CGFloat,font:CGFloat)->some View {
-  Button{send(spec.code,flags);if shift{shift=false}} label:{
+  Button{keyFeedback();send(spec.code,flags);if shift{shift=false}} label:{
    Text(spec.label).font(.system(size:font,weight:.medium,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)
   }.buttonStyle(KeyboardKeyStyle())
    .frame(width:max(18,unit*spec.width+gap*(spec.width-1)),height:height)
  }
 
  private func modifierKey(_ label:String,active:Bool,units:CGFloat,unit:CGFloat,height:CGFloat,gap:CGFloat,font:CGFloat,action:@escaping()->Void)->some View {
-  Button(action:action){Text(label).font(.system(size:font*0.9,weight:.semibold,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)}
+  Button(action:{keyFeedback();action()}){Text(label).font(.system(size:font*0.9,weight:.semibold,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)}
    .buttonStyle(KeyboardKeyStyle(active:active))
    .frame(width:max(22,unit*units+gap*(units-1)),height:height)
  }
