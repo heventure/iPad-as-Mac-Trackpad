@@ -1,0 +1,2 @@
+import SwiftUI
+@main struct MacReceiverApp:App{@StateObject private var receiver=MacPeerReceiver();var body:some Scene{WindowGroup{MacReceiverView(receiver:receiver).frame(minWidth:520,minHeight:380)}.windowResizability(.contentSize)}}
