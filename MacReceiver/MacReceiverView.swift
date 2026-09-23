@@ -13,6 +13,9 @@ struct MacReceiverView: View {
                 Text("Mac Trackpad Receiver").font(.largeTitle.bold())
                 Text(receiver.statusText)
                     .foregroundStyle(receiver.connectedPeerName == nil ? Color.secondary : Color.green)
+                Text(receiver.realtimeStatus)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.cyan)
             }
 
             GroupBox {
