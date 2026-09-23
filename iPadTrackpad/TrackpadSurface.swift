@@ -3,9 +3,9 @@ import UIKit
 
 struct TrackpadSurface: UIViewRepresentable {
     let sensitivity: Double
-    let onMessage: (PointerMessage) -> Void
+    let onMessage: (PointerMessage) -> Void\n    let onRawMove: (Double, Double) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onMessage: onMessage) }
+    func makeCoordinator() -> Coordinator { Coordinator(onMessage: onMessage, onRawMove: onRawMove) }
 
     func makeUIView(context: Context) -> TouchProbeView {
         let view = TouchProbeView()
@@ -44,10 +44,6 @@ struct TrackpadSurface: UIViewRepresentable {
             label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14)
         ])
 
-        let one = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.one(_:)))
-        one.minimumNumberOfTouches = 1; one.maximumNumberOfTouches = 1; one.delegate = context.coordinator; one.cancelsTouchesInView = false
-        view.addGestureRecognizer(one)
-
         let two = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.two(_:)))
         two.minimumNumberOfTouches = 2; two.maximumNumberOfTouches = 2; two.delegate = context.coordinator; two.cancelsTouchesInView = false
         view.addGestureRecognizer(two)
@@ -65,12 +61,12 @@ struct TrackpadSurface: UIViewRepresentable {
 
     func updateUIView(_ uiView: TouchProbeView, context: Context) {
         context.coordinator.sensitivity = sensitivity
-        context.coordinator.onMessage = onMessage
+        context.coordinator.onMessage = onMessage\n        context.coordinator.onRawMove = onRawMove
     }
 
     final class TouchProbeView: UIView {
         var onRawTouch: ((CGPoint, TimeInterval) -> Void)?
-        var onTouchEnded: (() -> Void)?
+        var onTouchEnded: (() -> Void)?\n        var onRawMove: ((CGFloat, CGFloat) -> Void)?\n        private var lastSinglePoint: CGPoint?
 
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             super.touchesBegan(touches, with: event)
@@ -83,10 +79,10 @@ struct TrackpadSurface: UIViewRepresentable {
             for sample in samples { onRawTouch?(sample.location(in: self), sample.timestamp) }
         }
         override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-            super.touchesEnded(touches, with: event); onTouchEnded?()
+            super.touchesEnded(touches, with: event); lastSinglePoint = nil; onTouchEnded?()
         }
         override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-            super.touchesCancelled(touches, with: event); onTouchEnded?()
+            super.touchesCancelled(touches, with: event); lastSinglePoint = nil; onTouchEnded?()
         }
         private func emit(_ touches: Set<UITouch>, event: UIEvent?) {
             guard let touch = touches.first else { return }
@@ -104,7 +100,7 @@ struct TrackpadSurface: UIViewRepresentable {
         private var inertiaVX: CGFloat = 0, inertiaVY: CGFloat = 0
         private var lastTimestamp: CFTimeInterval = 0
 
-        init(onMessage: @escaping (PointerMessage) -> Void) { self.onMessage = onMessage }
+        init(onMessage: @escaping (PointerMessage) -> Void, onRawMove: @escaping (Double, Double) -> Void) { self.onMessage = onMessage; self.onRawMove = onRawMove }\n\n        func sendRawMove(dx: CGFloat, dy: CGFloat) { onRawMove(Double(dx) * sensitivity, Double(dy) * sensitivity) }
 
         func updateProbe(point: CGPoint, timestamp: TimeInterval) {
             hideWork?.cancel()
@@ -122,12 +118,6 @@ struct TrackpadSurface: UIViewRepresentable {
             let work = DispatchWorkItem { [weak self] in self?.probeView?.isHidden = true }
             hideWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
-        }
-
-        @objc func one(_ r: UIPanGestureRecognizer) {
-            let d = r.translation(in:r.view); r.setTranslation(.zero,in:r.view)
-            guard r.state == .began || r.state == .changed else{return}
-            onMessage(.move(dx:d.x*sensitivity,dy:d.y*sensitivity))
         }
 
         @objc func two(_ r: UIPanGestureRecognizer) {
