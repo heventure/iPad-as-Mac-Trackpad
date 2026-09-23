@@ -8,6 +8,7 @@ struct iPadTrackpadView:View {
  @State private var swapped=false
  @State private var landscapeKeyboardShare:CGFloat=0.618
  @State private var portraitTrackpadShare:CGFloat=0.618
+ @State private var joystickArrows=false
 
  var body:some View {
   GeometryReader { geo in
@@ -21,6 +22,12 @@ struct iPadTrackpadView:View {
      }
      Spacer()
      if mode==1 {
+      Toggle(isOn:$joystickArrows) {
+       Label("摇杆",systemImage:"dot.circle.and.hand.point.up.left.fill")
+      }
+      .toggleStyle(.button)
+      .buttonStyle(.bordered)
+      .accessibilityLabel("方向键与八向摇杆切换")
       Button { withAnimation(.snappy){swapped.toggle()} } label:{Image(systemName:"arrow.left.arrow.right").font(.title3)}
        .buttonStyle(.bordered).accessibilityLabel("交换触控板和键盘")
      }
@@ -58,7 +65,7 @@ struct iPadTrackpadView:View {
  }
 
  private func keyboard(compact:Bool)->some View {
-  MacKeyboard(compact:compact){code,flags in peer.send(.key(code,flags))}
+  MacKeyboard(compact:compact,joystickArrows:joystickArrows){code,flags in peer.send(.key(code,flags))}
    .frame(maxWidth:.infinity,maxHeight:.infinity)
    .layoutPriority(1)
  }
@@ -145,6 +152,7 @@ private struct KeySpec:Identifiable {
 
 private struct MacKeyboard:View {
  let compact:Bool
+ let joystickArrows:Bool
  let send:(UInt16,UInt64)->Void
  @State private var shift=false
  @State private var control=false
@@ -244,7 +252,11 @@ private struct MacKeyboard:View {
    bottomFixedKey("",code:49,width:u*3.8,height:height,font:font)
    bottomFixedModifier("⌘",active:command,width:u*1.35,height:height,font:font){command.toggle()}
    bottomFixedModifier("⌥",active:option,width:u*1.25,height:height,font:font){option.toggle()}
-   arrowCluster(side:arrowSide,height:height,font:font)
+   if joystickArrows {
+    EightWayArrowJoystick(width:arrowWidth,height:height,send:send,flags:flags)
+   } else {
+    arrowCluster(side:arrowSide,height:height,font:font)
+   }
   }
   .frame(width:totalWidth,height:height)
  }
@@ -321,6 +333,86 @@ private struct MacKeyboard:View {
 
  private func functionCode(_ n:Int)->UInt16 {
   [122,120,99,118,96,97,98,100,101,109,103,111][n-1]
+ }
+}
+
+
+private struct EightWayArrowJoystick:View {
+ let width:CGFloat
+ let height:CGFloat
+ let send:(UInt16,UInt64)->Void
+ let flags:UInt64
+ @State private var knob=CGSize.zero
+ @State private var lastDirection:Int?
+ @State private var lastSentAt=Date.distantPast
+
+ var body:some View {
+  GeometryReader { geo in
+   let diameter=min(geo.size.width,geo.size.height)
+   let knobSize=max(18,diameter*0.34)
+   let radius=max(1,(diameter-knobSize)/2-3)
+   ZStack {
+    Circle()
+     .fill(Color.white.opacity(0.08))
+     .overlay(Circle().stroke(Color.white.opacity(0.16),lineWidth:1))
+    ForEach(0..<8,id:\.self) { i in
+     Image(systemName:"triangle.fill")
+      .font(.system(size:max(7,diameter*0.08),weight:.bold))
+      .foregroundStyle(Color.secondary.opacity(0.7))
+      .offset(y:-diameter*0.34)
+      .rotationEffect(.degrees(Double(i)*45))
+    }
+    Circle()
+     .fill(Color.white.opacity(0.22))
+     .overlay(Circle().stroke(Color.white.opacity(0.24),lineWidth:1))
+     .frame(width:knobSize,height:knobSize)
+     .offset(knob)
+   }
+   .frame(width:diameter,height:diameter)
+   .position(x:geo.size.width/2,y:geo.size.height/2)
+   .contentShape(Rectangle())
+   .gesture(
+    DragGesture(minimumDistance:0)
+     .onChanged { value in
+      let center=CGPoint(x:geo.size.width/2,y:geo.size.height/2)
+      let dx=value.location.x-center.x
+      let dy=value.location.y-center.y
+      let distance=sqrt(dx*dx+dy*dy)
+      let scale=distance > radius ? radius/distance : 1
+      knob=CGSize(width:dx*scale,height:dy*scale)
+      guard distance > max(10,diameter*0.12) else { lastDirection=nil;return }
+      let angle=atan2(dy,dx)
+      var sector=Int(round(angle/(.pi/4)))
+      if sector < 0 { sector += 8 }
+      if sector != lastDirection || Date().timeIntervalSince(lastSentAt) > 0.11 {
+       sendDirection(sector)
+       lastDirection=sector
+       lastSentAt=Date()
+       UIImpactFeedbackGenerator(style:.light).impactOccurred(intensity:0.55)
+      }
+     }
+     .onEnded { _ in
+      knob=.zero
+      lastDirection=nil
+     }
+   )
+  }
+  .frame(width:width,height:height)
+  .accessibilityLabel("八向方向摇杆")
+ }
+
+ private func sendDirection(_ direction:Int) {
+  // atan2 sectors: right, down-right, down, down-left, left, up-left, up, up-right.
+  switch direction {
+  case 0: send(124,flags)
+  case 1: send(125,flags);send(124,flags)
+  case 2: send(125,flags)
+  case 3: send(125,flags);send(123,flags)
+  case 4: send(123,flags)
+  case 5: send(126,flags);send(123,flags)
+  case 6: send(126,flags)
+  default: send(126,flags);send(124,flags)
+  }
  }
 }
 
