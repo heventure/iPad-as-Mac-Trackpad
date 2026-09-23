@@ -6,6 +6,8 @@ struct iPadTrackpadView:View {
  @State private var sensitivity=1.2
  @State private var mode=0
  @State private var swapped=false
+ @State private var landscapeKeyboardShare:CGFloat=0.618
+ @State private var portraitTrackpadShare:CGFloat=0.618
 
  var body:some View {
   GeometryReader { geo in
@@ -28,20 +30,15 @@ struct iPadTrackpadView:View {
 
     if mode==0 {
      trackpad
-    } else if landscape {
-     HStack(spacing:12) {
-      if swapped {
-       keyboard(compact:true).frame(width:max(560,geo.size.width*0.66))
-       trackpad.frame(minWidth:220)
-      } else {
-       trackpad.frame(minWidth:220)
-       keyboard(compact:true).frame(width:max(560,geo.size.width*0.66))
-      }
-     }
     } else {
-     VStack(spacing:12) {
-      if swapped { keyboard(compact:false); trackpad } else { trackpad; keyboard(compact:false) }
-     }
+     AdaptiveInputSplit(
+      landscape:landscape,
+      swapped:swapped,
+      landscapeKeyboardShare:$landscapeKeyboardShare,
+      portraitTrackpadShare:$portraitTrackpadShare,
+      trackpad:{trackpad},
+      keyboard:{keyboard(compact:landscape)}
+     )
     }
 
     HStack(spacing:12) {
@@ -62,8 +59,75 @@ struct iPadTrackpadView:View {
 
  private func keyboard(compact:Bool)->some View {
   MacKeyboard(compact:compact){code,flags in peer.send(.key(code,flags))}
-   .frame(maxWidth:.infinity)
+   .frame(maxWidth:.infinity,maxHeight:.infinity)
    .layoutPriority(1)
+ }
+}
+
+private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
+ let landscape:Bool
+ let swapped:Bool
+ @Binding var landscapeKeyboardShare:CGFloat
+ @Binding var portraitTrackpadShare:CGFloat
+ @ViewBuilder let trackpad:()->Trackpad
+ @ViewBuilder let keyboard:()->Keyboard
+
+ var body:some View {
+  GeometryReader { geo in
+   if landscape {
+    let divider:CGFloat=18
+    let available=max(1,geo.size.width-divider)
+    let keyboardWidth=available*landscapeKeyboardShare
+    let trackpadWidth=available-keyboardWidth
+    HStack(spacing:0) {
+     if swapped {
+      keyboard().frame(width:keyboardWidth,height:geo.size.height)
+      dragHandle(horizontal:false,total:available)
+      trackpad().frame(width:trackpadWidth,height:geo.size.height)
+     } else {
+      trackpad().frame(width:trackpadWidth,height:geo.size.height)
+      dragHandle(horizontal:false,total:available)
+      keyboard().frame(width:keyboardWidth,height:geo.size.height)
+     }
+    }
+   } else {
+    let divider:CGFloat=18
+    let available=max(1,geo.size.height-divider)
+    let trackpadHeight=available*portraitTrackpadShare
+    let keyboardHeight=available-trackpadHeight
+    VStack(spacing:0) {
+     if swapped {
+      keyboard().frame(width:geo.size.width,height:keyboardHeight)
+      dragHandle(horizontal:true,total:available)
+      trackpad().frame(width:geo.size.width,height:trackpadHeight)
+     } else {
+      trackpad().frame(width:geo.size.width,height:trackpadHeight)
+      dragHandle(horizontal:true,total:available)
+      keyboard().frame(width:geo.size.width,height:keyboardHeight)
+     }
+    }
+   }
+  }
+ }
+
+ private func dragHandle(horizontal:Bool,total:CGFloat)->some View {
+  ZStack {
+   Color.clear
+   Capsule().fill(Color.secondary.opacity(0.55))
+    .frame(width:horizontal ? 48:4,height:horizontal ? 4:48)
+  }
+  .frame(width:horizontal ? nil:18,height:horizontal ? 18:nil)
+  .contentShape(Rectangle())
+  .gesture(DragGesture(minimumDistance:0).onChanged { value in
+   if landscape {
+    let delta=value.translation.width/total*(swapped ? -1:1)
+    landscapeKeyboardShare=min(0.72,max(0.52,landscapeKeyboardShare+delta))
+   } else {
+    let delta=value.translation.height/total*(swapped ? -1:1)
+    portraitTrackpadShare=min(0.72,max(0.50,portraitTrackpadShare+delta))
+   }
+  })
+  .accessibilityLabel("调整触控板和键盘比例")
  }
 }
 
@@ -130,7 +194,6 @@ private struct MacKeyboard:View {
    .padding(compact ? 7:10)
    .background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:18,style:.continuous))
   }
-  .frame(height:compact ? 230:340)
  }
 
  private func functionRow(unit:CGFloat)->some View {
