@@ -17,15 +17,17 @@ import Network
  private var udpPacketCount=0
  private var udpConnectionCount=0
 
- override init(){super.init();session.delegate=self;advertiser.delegate=self;advertiser.startAdvertisingPeer();startUDPListener()}
+ override init(){super.init();print("[UDP-Mac] init");session.delegate=self;advertiser.delegate=self;advertiser.startAdvertisingPeer();startUDPListener()}
  func stop(){advertiser.stopAdvertisingPeer();session.disconnect();udpListener?.cancel()}
  func restartAdvertising(){advertiser.stopAdvertisingPeer();advertiser.startAdvertisingPeer();if connectedPeerName==nil{statusText="等待 iPad 连接…"}}
 
  private func startUDPListener(){
   do{
    let listener=try NWListener(using:.udp)
+   print("[UDP-Mac] listener created port=\(String(describing:listener.port))")
    listener.service=NWListener.Service(name:nil,type:"_ipadpad-input._udp")
-   listener.stateUpdateHandler={ [weak self] state in
+   listener.stateUpdateHandler={ [weak self,weak listener] state in
+    print("[UDP-Mac] listener state=\(state) port=\(String(describing:listener?.port))")
     Task{@MainActor in
      switch state{
      case .ready:self?.realtimeStatus="UDP: 实时通道就绪"
@@ -35,8 +37,10 @@ import Network
     }
    }
    listener.newConnectionHandler={ [weak self] connection in
+    print("[UDP-Mac] NEW CONNECTION endpoint=\(connection.endpoint)")
     guard let self else{return}
     connection.stateUpdateHandler={ [weak self,weak connection] state in
+     print("[UDP-Mac] connection state=\(state) endpoint=\(String(describing:connection?.endpoint))")
      Task{@MainActor in
       guard let self else{return}
       switch state{
@@ -69,8 +73,9 @@ import Network
  nonisolated private func receiveNextUDP(on connection:NWConnection){
   connection.receiveMessage{ [weak self,weak connection] data,context,isComplete,error in
    guard let self,let connection else{return}
-   if let data,!data.isEmpty { self.handleUDPPacket(data) }
+   if let data,!data.isEmpty { print("[UDP-Mac] receive bytes=\(data.count) complete=\(isComplete) context=\(String(describing:context))"); self.handleUDPPacket(data) }
    if let error {
+    print("[UDP-Mac] receive error=\(error)")
     Task{@MainActor in self.realtimeStatus="UDP接收失败: \(error.localizedDescription)"}
     return
    }
