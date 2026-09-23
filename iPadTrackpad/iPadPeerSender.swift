@@ -19,6 +19,8 @@ import UIKit
  private var udpConnection:NWConnection?
  private var udpSendCount=0
  private var udpSendInFlight=false
+ private var expectedUDPToken:String?
+ private var discoveredUDP:[NWEndpoint]=[]
 
  override init(){super.init();print("[UDP-iPad] init");session.delegate=self;browser.delegate=self;browser.startBrowsingForPeers();startUDPDiscovery()}
 
@@ -55,15 +57,28 @@ import UIKit
   b.browseResultsChangedHandler={ [weak self] results,changes in
    print("[UDP-iPad] browse results=\(results.count) changes=\(changes)")
    for result in results { print("[UDP-iPad] discovered endpoint=\(result.endpoint) interfaces=\(result.interfaces)") }
-   guard let endpoint=results.first?.endpoint else{return}
-   print("[UDP-iPad] selected endpoint=\(endpoint)")
-   Task{@MainActor in self?.connectUDP(to:endpoint)}
+   let endpoints=results.map{$0.endpoint}
+   Task{@MainActor in
+    guard let self else{return}
+    self.discoveredUDP=endpoints
+    self.connectMatchingUDPIfPossible()
+   }
   }
   b.stateUpdateHandler={ [weak self] state in
    print("[UDP-iPad] browser state=\(state)")
    if case let .failed(error)=state { Task{@MainActor in self?.realtimeStatus="UDP: \(error.localizedDescription)"} }
   }
   b.start(queue:udpQueue);udpBrowser=b
+ }
+
+ private func connectMatchingUDPIfPossible(){
+  guard let token=expectedUDPToken else{print("[UDP-iPad] waiting for MC pairing token");return}
+  guard let endpoint=discoveredUDP.first(where:{ endpoint in
+   if case let .service(name,_,_,_)=endpoint{return name==token}
+   return false
+  }) else{realtimeStatus="UDP: 等待匹配的 Mac 服务…";print("[UDP-iPad] no Bonjour endpoint matches token=\(token)");return}
+  print("[UDP-iPad] token matched endpoint=\(endpoint)")
+  connectUDP(to:endpoint)
  }
 
  private func connectUDP(to endpoint:NWEndpoint){
@@ -93,7 +108,11 @@ extension iPadPeerSender:MCNearbyServiceBrowserDelegate{
 }
 extension iPadPeerSender:MCSessionDelegate{
  nonisolated func session(_ session:MCSession,peer peerID:MCPeerID,didChange state:MCSessionState){Task{@MainActor in switch state{case .connected:self.connectedPeerName=peerID.displayName;self.statusText="已连接 \(peerID.displayName)";case .connecting:self.statusText="正在连接 \(peerID.displayName)…";case .notConnected:self.connectedPeerName=nil;self.invitedPeers.remove(peerID);self.statusText="正在搜索 Mac…";@unknown default:self.statusText="连接状态未知"}}}
- nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){}
+ nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){
+  guard let text=String(data:data,encoding:.utf8),text.hasPrefix("UDP_TOKEN:") else{return}
+  let token=String(text.dropFirst("UDP_TOKEN:".count))
+  Task{@MainActor in self.expectedUDPToken=token;self.realtimeStatus="UDP: 已获得配对信息";print("[UDP-iPad] received pairing token=\(token) from=\(peerID.displayName)");self.connectMatchingUDPIfPossible()}
+ }
  nonisolated func session(_ session:MCSession,didReceive stream:InputStream,withName streamName:String,fromPeer peerID:MCPeerID){}
  nonisolated func session(_ session:MCSession,didStartReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,with progress:Progress){}
  nonisolated func session(_ session:MCSession,didFinishReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,at localURL:URL?,withError error:Error?){}
