@@ -1,6 +1,7 @@
 import Foundation
 import MultipeerConnectivity
 import Network
+import Darwin
 
 @MainActor final class MacPeerReceiver:NSObject,ObservableObject{
  @Published private(set)var connectedPeerName:String?
@@ -84,9 +85,34 @@ import Network
 
  private func sendUDPEndpoint(to peer:MCPeerID){
   guard let port=udpListener?.port else{print("[UDP-Mac] endpoint not ready yet");return}
-  let payload=Data(("UDP_ENDPOINT:\(port.rawValue)").utf8)
-  do{try session.send(payload,toPeers:[peer],with:.reliable);print("[UDP-Mac] sent UDP port=\(port.rawValue) to=\(peer.displayName)")}
+  guard let host=localIPv4Address() else{print("[UDP-Mac] no LAN IPv4 address found");realtimeStatus="UDP: 未找到局域网 IPv4";return}
+  let payload=Data(("UDP_ENDPOINT:\(host):\(port.rawValue)").utf8)
+  do{try session.send(payload,toPeers:[peer],with:.reliable);print("[UDP-Mac] sent UDP endpoint=\(host):\(port.rawValue) to=\(peer.displayName)")}
   catch{print("[UDP-Mac] endpoint send failed=\(error)")}
+ }
+
+ private func localIPv4Address()->String?{
+  var ifaddr:UnsafeMutablePointer<ifaddrs>?
+  guard getifaddrs(&ifaddr)==0,let first=ifaddr else{return nil}
+  defer{freeifaddrs(ifaddr)}
+  var fallback:String?
+  var ptr:UnsafeMutablePointer<ifaddrs>?=first
+  while let current=ptr{
+   let item=current.pointee
+   defer{ptr=item.ifa_next}
+   guard let addr=item.ifa_addr,addr.pointee.sa_family==UInt8(AF_INET) else{continue}
+   let name=String(cString:item.ifa_name)
+   if name=="lo0"{continue}
+   var host=[CChar](repeating:0,count:Int(NI_MAXHOST))
+   let length=socklen_t(addr.pointee.sa_len)
+   if getnameinfo(addr,length,&host,socklen_t(host.count),nil,0,NI_NUMERICHOST)==0{
+    let ip=String(cString:host)
+    if name=="en0"{print("[UDP-Mac] LAN IPv4 en0=\(ip)");return ip}
+    if fallback==nil{fallback=ip}
+   }
+  }
+  if let fallback{print("[UDP-Mac] LAN IPv4 fallback=\(fallback)")}
+  return fallback
  }
 
  private func sendUDPEndpointToConnectedPeers(){
@@ -106,7 +132,11 @@ import Network
  }
 }
 extension MacPeerReceiver:MCNearbyServiceAdvertiserDelegate{
- nonisolated func advertiser(_ advertiser:MCNearbyServiceAdvertiser,didReceiveInvitationFromPeer peerID:MCPeerID,withContext context:Data?,invitationHandler:@escaping(Bool,MCSession?)->Void){Task{@MainActor in let accept=self.session.connectedPeers.isEmpty || self.session.connectedPeers.contains(peerID);invitationHandler(accept,accept ? self.session:nil)}}
+ nonisolated func advertiser(_ advertiser:MCNearbyServiceAdvertiser,didReceiveInvitationFromPeer peerID:MCPeerID,withContext context:Data?,invitationHandler:@escaping(Bool,MCSession?)->Void){Task{@MainActor in
+  if peerID.displayName==self.peerID.displayName{print("[MC-Mac] rejected same-name peer=\(peerID.displayName)");invitationHandler(false,nil);return}
+  let accept=self.session.connectedPeers.isEmpty || self.session.connectedPeers.contains(peerID)
+  invitationHandler(accept,accept ? self.session:nil)
+ }}
  nonisolated func advertiser(_ advertiser:MCNearbyServiceAdvertiser,didNotStartAdvertisingPeer error:Error){Task{@MainActor in self.statusText="广播失败：\(error.localizedDescription)"}}
 }
 extension MacPeerReceiver:MCSessionDelegate{
