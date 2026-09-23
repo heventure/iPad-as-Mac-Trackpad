@@ -226,7 +226,7 @@ private struct MacKeyboard:View {
  private func flexibleKey(_ label:String,code:UInt16,height:CGFloat,font:CGFloat)->some View {
   Button{send(code,flags);if shift{shift=false}} label:{
    Text(label).font(.system(size:font,weight:.medium,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)
-  }.buttonStyle(KeyboardKeyStyle()).frame(maxWidth:.infinity,height:height)
+  }.buttonStyle(KeyboardKeyStyle()).frame(maxWidth:.infinity).frame(height:height)
  }
 
  private func arrowCluster(unit:CGFloat,height:CGFloat,font:CGFloat)->some View {
