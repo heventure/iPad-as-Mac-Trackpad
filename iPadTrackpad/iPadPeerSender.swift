@@ -20,7 +20,7 @@ import UIKit
  private var udpSendCount=0
  private var udpSendInFlight=false
 
- override init(){super.init();session.delegate=self;browser.delegate=self;browser.startBrowsingForPeers();startUDPDiscovery()}
+ override init(){super.init();print("[UDP-iPad] init");session.delegate=self;browser.delegate=self;browser.startBrowsingForPeers();startUDPDiscovery()}
 
  func stop(){browser.stopBrowsingForPeers();session.disconnect();udpBrowser?.cancel();udpConnection?.cancel()}
 
@@ -33,8 +33,8 @@ import UIKit
   connection.send(content:data,contentContext:.defaultMessage,isComplete:true,completion:.contentProcessed({ [weak self] error in
    Task { @MainActor in
     guard let self else{return}
-    if let error { self.realtimeStatus="UDP发送失败: \(error.localizedDescription)" }
-    else if self.udpSendCount == 1 || self.udpSendCount % 100 == 0 { self.realtimeStatus="UDP: 已确认发送 \(self.udpSendCount) 个 datagram" }
+    if let error { print("[UDP-iPad] send error=\(error)"); self.realtimeStatus="UDP发送失败: \(error.localizedDescription)" }
+    else if self.udpSendCount == 1 || self.udpSendCount % 100 == 0 { print("[UDP-iPad] send processed count=\(self.udpSendCount) dx=\(dx) dy=\(dy) endpoint=\(connection.endpoint)"); self.realtimeStatus="UDP: 已确认发送 \(self.udpSendCount) 个 datagram" }
    }
   }))
  }
@@ -52,20 +52,26 @@ import UIKit
 
  private func startUDPDiscovery(){
   let b=NWBrowser(for:.bonjour(type:"_ipadpad-input._udp",domain:nil),using:.udp)
-  b.browseResultsChangedHandler={ [weak self] results,_ in
+  b.browseResultsChangedHandler={ [weak self] results,changes in
+   print("[UDP-iPad] browse results=\(results.count) changes=\(changes)")
+   for result in results { print("[UDP-iPad] discovered endpoint=\(result.endpoint) interfaces=\(result.interfaces)") }
    guard let endpoint=results.first?.endpoint else{return}
+   print("[UDP-iPad] selected endpoint=\(endpoint)")
    Task{@MainActor in self?.connectUDP(to:endpoint)}
   }
   b.stateUpdateHandler={ [weak self] state in
+   print("[UDP-iPad] browser state=\(state)")
    if case let .failed(error)=state { Task{@MainActor in self?.realtimeStatus="UDP: \(error.localizedDescription)"} }
   }
   b.start(queue:udpQueue);udpBrowser=b
  }
 
  private func connectUDP(to endpoint:NWEndpoint){
+  print("[UDP-iPad] connect endpoint=\(endpoint)")
   udpConnection?.cancel()
   let c=NWConnection(to:endpoint,using:.udp)
   c.stateUpdateHandler={ [weak self,weak c] state in
+   print("[UDP-iPad] connection state=\(state) endpoint=\(endpoint)")
    Task{@MainActor in
     guard let self=self,self.udpConnection === c else{return}
     switch state{
