@@ -77,9 +77,13 @@ extension iPadPeerSender:MCNearbyServiceBrowserDelegate{
 extension iPadPeerSender:MCSessionDelegate{
  nonisolated func session(_ session:MCSession,peer peerID:MCPeerID,didChange state:MCSessionState){Task{@MainActor in switch state{case .connected:self.connectedPeerName=peerID.displayName;self.statusText="已连接 \(peerID.displayName)";case .connecting:self.statusText="正在连接 \(peerID.displayName)…";case .notConnected:self.connectedPeerName=nil;self.invitedPeers.remove(peerID);self.statusText="正在搜索 Mac…";@unknown default:self.statusText="连接状态未知"}}}
  nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){
-  guard let text=String(data:data,encoding:.utf8),text.hasPrefix("UDP_ENDPOINT:"),let portValue=UInt16(text.dropFirst("UDP_ENDPOINT:".count)),let port=NWEndpoint.Port(rawValue:portValue) else{return}
-  let endpoint=NWEndpoint.hostPort(host:.ipv4(.broadcast),port:port)
-  Task{@MainActor in self.realtimeStatus="UDP: 已获得端口 \(portValue)";print("[UDP-iPad] received UDP port=\(portValue) from=\(peerID.displayName)");self.connectUDP(to:endpoint)}
+  guard let text=String(data:data,encoding:.utf8),text.hasPrefix("UDP_ENDPOINT:") else{return}
+  let value=String(text.dropFirst("UDP_ENDPOINT:".count))
+  let parts=value.split(separator:":",maxSplits:1).map(String.init)
+  guard parts.count==2,let portValue=UInt16(parts[1]),let port=NWEndpoint.Port(rawValue:portValue) else{print("[UDP-iPad] invalid endpoint payload=\(text)");return}
+  let host=NWEndpoint.Host(parts[0])
+  let endpoint=NWEndpoint.hostPort(host:host,port:port)
+  Task{@MainActor in self.realtimeStatus="UDP: \(parts[0]):\(portValue)";print("[UDP-iPad] received UDP endpoint=\(parts[0]):\(portValue) from=\(peerID.displayName)");self.connectUDP(to:endpoint)}
  }
  nonisolated func session(_ session:MCSession,didReceive stream:InputStream,withName streamName:String,fromPeer peerID:MCPeerID){}
  nonisolated func session(_ session:MCSession,didStartReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,with progress:Progress){}
