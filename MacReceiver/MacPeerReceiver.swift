@@ -63,7 +63,7 @@ import Network
   MouseController.handle(.move(dx:Double(Float32(bitPattern:xBits)),dy:Double(Float32(bitPattern:yBits))))
   Task{@MainActor in
    self.udpPacketCount += 1
-   if self.udpPacketCount == 1 { self.realtimeStatus="UDP: 正在接收指针数据" }
+   if self.udpPacketCount == 1 || self.udpPacketCount % 100 == 0 { self.realtimeStatus="UDP: 已收到 \(self.udpPacketCount) 个指针包" }
   }
  }
 }
