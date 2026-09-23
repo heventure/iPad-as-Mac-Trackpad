@@ -94,57 +94,63 @@ private struct MacKeyboard:View {
  ]
 
  var body:some View {
-  VStack(spacing:gap) {
-   functionRow
-   row(number)
-   row(qwerty)
-   HStack(spacing:gap){toggle("caps",active:caps,width:1.6){caps.toggle();send(57,flags)};row(home)}
-   HStack(spacing:gap){toggle("shift",active:shift,width:1.7){shift.toggle()};row(bottom);toggle("shift",active:shift,width:1.7){shift.toggle()}}
-   HStack(spacing:gap){
-    key("fn",63,width:0.8);toggle("control",active:control){control.toggle()};toggle("option",active:option){option.toggle()}
-    toggle("⌘",active:command){command.toggle()};key("",49,width:4.7);toggle("⌘",active:command){command.toggle()}
-    toggle("option",active:option){option.toggle()};key("←",123);key("↓",125);key("↑",126);key("→",124)
+  GeometryReader { geo in
+   let unit=max(18,(geo.size.width-gap*15)/15.5)
+   VStack(spacing:gap) {
+    functionRow(unit:unit)
+    keyboardRow(number,unit:unit)
+    HStack(spacing:gap){ForEach(qwerty){k in fixedKey(k,unit:unit)}}
+    HStack(spacing:gap){
+     modifierKey("caps",active:caps,units:1.75,unit:unit){caps.toggle();send(57,flags)}
+     ForEach(home){k in fixedKey(k,unit:unit)}
+    }
+    HStack(spacing:gap){
+     modifierKey("shift",active:shift,units:2.25,unit:unit){shift.toggle()}
+     ForEach(bottom){k in fixedKey(k,unit:unit)}
+     modifierKey("shift",active:shift,units:2.25,unit:unit){shift.toggle()}
+    }
+    HStack(spacing:gap){
+     fixedKey(KeySpec(label:"fn",code:63,width:0.8),unit:unit)
+     modifierKey("control",active:control,units:1.15,unit:unit){control.toggle()}
+     modifierKey("option",active:option,units:1.15,unit:unit){option.toggle()}
+     modifierKey("⌘",active:command,units:1.2,unit:unit){command.toggle()}
+     fixedKey(KeySpec(label:"",code:49,width:4.2),unit:unit)
+     modifierKey("⌘",active:command,units:1.2,unit:unit){command.toggle()}
+     modifierKey("option",active:option,units:1.15,unit:unit){option.toggle()}
+     fixedKey(KeySpec(label:"←",code:123),unit:unit)
+     fixedKey(KeySpec(label:"↓",code:125),unit:unit)
+     fixedKey(KeySpec(label:"↑",code:126),unit:unit)
+     fixedKey(KeySpec(label:"→",code:124),unit:unit)
+    }
    }
+   .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.center)
+   .padding(compact ? 7:10)
+   .background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:18,style:.continuous))
   }
-  .padding(compact ? 7:10)
-  .background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:18,style:.continuous))
- }
-
- private var functionRow:some View {
+  .frame(height:compact ? 230:340)
+ } private func functionRow(unit:CGFloat)->some View {
   HStack(spacing:gap) {
-   key("esc",53)
-   ForEach(1...12,id:\.self){n in key("F\(n)",functionCode(n),small:true)}
+   fixedKey(KeySpec(label:"esc",code:53),unit:unit)
+   ForEach(1...12,id:\.self){n in fixedKey(KeySpec(label:"F\(n)",code:functionCode(n)),unit:unit,small:true)}
   }
  }
 
- private var gap:CGFloat { compact ? 4:7 }
- private var height:CGFloat { compact ? 31:42 }
- private var flags:UInt64 {
-  var f:UInt64=0;if caps{f|=1<<16};if shift{f|=1<<17};if control{f|=1<<18};if option{f|=1<<19};if command{f|=1<<20};return f
+ private func keyboardRow(_ keys:[KeySpec],unit:CGFloat)->some View {
+  HStack(spacing:gap){ForEach(keys){k in fixedKey(k,unit:unit)}}
  }
- private func functionCode(_ n:Int)->UInt16 { [122,120,99,118,96,97,98,100,101,109,103,111][n-1] }
 
- @ViewBuilder private func row(_ keys:[KeySpec])->some View {
-  HStack(spacing:gap){ForEach(keys){k in key(k.label,k.code,width:k.width)}}
+ private func fixedKey(_ spec:KeySpec,unit:CGFloat,small:Bool=false)->some View {
+  Button{send(spec.code,flags);if shift{shift=false}} label:{
+   Text(spec.label).font(.system(size:compact ? (small ? 9:11):(small ? 11:15),weight:.medium,design:.rounded))
+    .frame(maxWidth:.infinity,maxHeight:.infinity)
+  }
+  .buttonStyle(KeyboardKeyStyle())
+  .frame(width:max(20,unit*spec.width+gap*(spec.width-1)),height:height)
  }
- private func key(_ label:String,_ code:UInt16,width:CGFloat=1,small:Bool=false)->some View {
-  Button{send(code,flags);if shift{shift=false}} label:{
-   Text(label).font(.system(size:compact ? (small ? 9:11):(small ? 11:15),weight:.medium,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)
-  }.buttonStyle(KeyboardKeyStyle()).frame(minWidth:(compact ? 23:34)*width,minHeight:height,maxHeight:height)
- }
- private func toggle(_ label:String,active:Bool,width:CGFloat=1,action:@escaping()->Void)->some View {
+
+ private func modifierKey(_ label:String,active:Bool,units:CGFloat,unit:CGFloat,action:@escaping()->Void)->some View {
   Button(action:action){Text(label).font(.system(size:compact ? 10:13,weight:.semibold,design:.rounded)).frame(maxWidth:.infinity,maxHeight:.infinity)}
-   .buttonStyle(KeyboardKeyStyle(active:active)).frame(minWidth:(compact ? 30:50)*width,minHeight:height,maxHeight:height)
+   .buttonStyle(KeyboardKeyStyle(active:active))
+   .frame(width:max(24,unit*units+gap*(units-1)),height:height)
  }
-}
 
-private struct KeyboardKeyStyle:ButtonStyle {
- var active=false
- func makeBody(configuration:Configuration)->some View {
-  configuration.label.foregroundStyle(.primary)
-   .background(active ? Color.accentColor.opacity(0.75):Color.white.opacity(configuration.isPressed ? 0.22 : 0.12))
-   .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
-   .overlay(RoundedRectangle(cornerRadius:7,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
-   .scaleEffect(configuration.isPressed ? 0.96 : 1).animation(.easeOut(duration:0.06),value:configuration.isPressed)
- }
-}
