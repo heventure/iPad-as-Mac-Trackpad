@@ -45,19 +45,19 @@ struct TrackpadSurface: UIViewRepresentable {
         ])
 
         let one = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.one(_:)))
-        one.minimumNumberOfTouches = 1; one.maximumNumberOfTouches = 1; one.delegate = context.coordinator
+        one.minimumNumberOfTouches = 1; one.maximumNumberOfTouches = 1; one.delegate = context.coordinator; one.cancelsTouchesInView = false
         view.addGestureRecognizer(one)
 
         let two = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.two(_:)))
-        two.minimumNumberOfTouches = 2; two.maximumNumberOfTouches = 2; two.delegate = context.coordinator
+        two.minimumNumberOfTouches = 2; two.maximumNumberOfTouches = 2; two.delegate = context.coordinator; two.cancelsTouchesInView = false
         view.addGestureRecognizer(two)
 
         let left = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.left(_:)))
-        left.numberOfTouchesRequired = 1; left.delegate = context.coordinator
+        left.numberOfTouchesRequired = 1; left.delegate = context.coordinator; left.cancelsTouchesInView = false
         view.addGestureRecognizer(left)
 
         let right = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.right(_:)))
-        right.numberOfTouchesRequired = 2; right.delegate = context.coordinator
+        right.numberOfTouchesRequired = 2; right.delegate = context.coordinator; right.cancelsTouchesInView = false
         view.addGestureRecognizer(right)
         left.require(toFail: right)
         return view
