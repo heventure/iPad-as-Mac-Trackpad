@@ -71,7 +71,6 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
  @Binding var portraitTrackpadShare:CGFloat
  @ViewBuilder let trackpad:()->Trackpad
  @ViewBuilder let keyboard:()->Keyboard
- @State private var dragStartShare:CGFloat?
  @State private var dragging=false
 
  var body:some View {
@@ -110,6 +109,7 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
     }.transaction { if dragging { $0.animation=nil } }
    }
   }
+  .coordinateSpace(name:"inputSplit")
  }
 
  private func dragHandle(horizontal:Bool,total:CGFloat)->some View {
@@ -120,24 +120,20 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
   }
   .frame(width:horizontal ? nil:18,height:horizontal ? 18:nil)
   .contentShape(Rectangle())
-  .gesture(DragGesture(minimumDistance:0)
+  .gesture(DragGesture(minimumDistance:0,coordinateSpace:.named("inputSplit"))
    .onChanged { value in
-    if dragStartShare == nil {
-     dragStartShare=landscape ? landscapeKeyboardShare:portraitTrackpadShare
-     dragging=true
-    }
-    let start=dragStartShare ?? 0.618
+    dragging=true
     if landscape {
-     // Divider moving toward the keyboard shrinks it; moving away grows it.
-     let sign:CGFloat=swapped ? 1:-1
-     landscapeKeyboardShare=min(0.72,max(0.52,start+sign*value.translation.width/total))
+     let dividerX=min(total,max(0,value.location.x))
+     let keyboardWidth=swapped ? dividerX:(total-dividerX)
+     landscapeKeyboardShare=min(0.72,max(0.52,keyboardWidth/total))
     } else {
-     // Trackpad is below when swapped and above otherwise.
-     let sign:CGFloat=swapped ? 1:-1
-     portraitTrackpadShare=min(0.72,max(0.50,start+sign*value.translation.height/total))
+     let dividerY=min(total,max(0,value.location.y))
+     let trackpadHeight=swapped ? (total-dividerY):dividerY
+     portraitTrackpadShare=min(0.72,max(0.50,trackpadHeight/total))
     }
    }
-   .onEnded { _ in dragStartShare=nil;dragging=false }
+   .onEnded { _ in dragging=false }
   )
   .accessibilityLabel("调整触控板和键盘比例")
  }
@@ -180,7 +176,8 @@ private struct MacKeyboard:View {
    let padding:CGFloat=compact ? 7:10
    let usableHeight=max(120,geo.size.height-padding*2)
    let gap=max(3,min(7,usableHeight*0.018))
-   let keyHeight=max(22,(usableHeight-gap*5)/6)
+   let keyHeight=max(22,(usableHeight-gap*5)/6.22)
+   let bottomHeight=keyHeight*1.22
    let usableWidth=max(200,geo.size.width-padding*2)
    let unit=max(16,(usableWidth-gap*15)/15.5)
    let font=max(9,min(15,keyHeight*0.34))
@@ -198,14 +195,14 @@ private struct MacKeyboard:View {
      modifierKey("shift",active:shift,units:2.25,unit:unit,height:keyHeight,gap:gap,font:font){shift.toggle()}
     }
     HStack(spacing:gap){
-     fixedKey(KeySpec(label:"fn",code:63,width:0.8),unit:unit,height:keyHeight,gap:gap,font:font)
-     modifierKey("ctrl",active:control,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){control.toggle()}
-     modifierKey("⌥",active:option,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){option.toggle()}
-     modifierKey("⌘",active:command,units:1.2,unit:unit,height:keyHeight,gap:gap,font:font){command.toggle()}
-     fixedKey(KeySpec(label:"",code:49,width:4.2),unit:unit,height:keyHeight,gap:gap,font:font)
-     modifierKey("⌘",active:command,units:1.2,unit:unit,height:keyHeight,gap:gap,font:font){command.toggle()}
-     modifierKey("⌥",active:option,units:1.15,unit:unit,height:keyHeight,gap:gap,font:font){option.toggle()}
-     arrowCluster(unit:unit,height:keyHeight,font:font)
+     fixedKey(KeySpec(label:"fn",code:63,width:0.8),unit:unit,height:bottomHeight,gap:gap,font:font)
+     modifierKey("ctrl",active:control,units:1.15,unit:unit,height:bottomHeight,gap:gap,font:font){control.toggle()}
+     modifierKey("⌥",active:option,units:1.15,unit:unit,height:bottomHeight,gap:gap,font:font){option.toggle()}
+     modifierKey("⌘",active:command,units:1.2,unit:unit,height:bottomHeight,gap:gap,font:font){command.toggle()}
+     fixedKey(KeySpec(label:"",code:49,width:4.2),unit:unit,height:bottomHeight,gap:gap,font:font)
+     modifierKey("⌘",active:command,units:1.2,unit:unit,height:bottomHeight,gap:gap,font:font){command.toggle()}
+     modifierKey("⌥",active:option,units:1.15,unit:unit,height:bottomHeight,gap:gap,font:font){option.toggle()}
+     arrowCluster(unit:unit,height:bottomHeight,font:font)
     }
    }
    .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.center)
@@ -232,15 +229,15 @@ private struct MacKeyboard:View {
  }
 
  private func arrowCluster(unit:CGFloat,height:CGFloat,font:CGFloat)->some View {
-  let half=max(10,(height-2)/2)
+  let half=max(18,(height-3)/2)
   return VStack(spacing:2) {
-   HStack(spacing:2){Spacer(minLength:unit+2);arrowKey("↑",code:126,width:unit,height:half,font:font);Spacer(minLength:unit+2)}
+   HStack(spacing:2){Spacer(minLength:unit*0.9+2);arrowKey("↑",code:126,width:unit*1.2,height:half,font:font);Spacer(minLength:unit*0.9+2)}
    HStack(spacing:2){
-    arrowKey("←",code:123,width:unit,height:half,font:font)
-    arrowKey("↓",code:125,width:unit,height:half,font:font)
-    arrowKey("→",code:124,width:unit,height:half,font:font)
+    arrowKey("←",code:123,width:unit*1.2,height:half,font:font)
+    arrowKey("↓",code:125,width:unit*1.2,height:half,font:font)
+    arrowKey("→",code:124,width:unit*1.2,height:half,font:font)
    }
-  }.frame(width:unit*3+4,height:height)
+  }.frame(width:unit*3.6+4,height:height)
  }
 
  private func arrowKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
