@@ -25,7 +25,7 @@ struct iPadTrackpadView: View {
                 Text("触控板 + 键盘").tag(1)
             }.pickerStyle(.segmented)
 
-            TrackpadSurface(sensitivity:sensitivity,onMessage:peer.send)
+            TrackpadSurface(sensitivity:sensitivity,onMessage:peer.send,onRawMove:peer.sendPointerUDP)
                 .overlay(alignment:.bottomLeading) {
                     Text("单指移动 · 轻点左键 · 双指轻点右键 · 双指滚动")
                         .font(.footnote).foregroundStyle(Color.secondary).padding(16).allowsHitTesting(false)
