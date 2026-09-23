@@ -176,8 +176,10 @@ private struct MacKeyboard:View {
    let padding:CGFloat=compact ? 7:10
    let usableHeight=max(120,geo.size.height-padding*2)
    let gap=max(3,min(7,usableHeight*0.018))
-   let keyHeight=max(22,(usableHeight-gap*5)/6.22)
-   let bottomHeight=keyHeight*1.22
+   // Reserve a genuinely taller last row. The arrow cluster must stay inside
+   // this row instead of protruding upward over the Shift row.
+   let keyHeight=max(22,(usableHeight-gap*5)/6.6)
+   let bottomHeight=keyHeight*1.6
    let usableWidth=max(200,geo.size.width-padding*2)
    let unit=max(16,(usableWidth-gap*15)/15.5)
    let font=max(9,min(15,keyHeight*0.34))
@@ -222,7 +224,9 @@ private struct MacKeyboard:View {
  private func bottomRow(totalWidth:CGFloat,height:CGFloat,letterHeight:CGFloat,gap:CGFloat,font:CGFloat)->some View {
   // Arrow keys must stay easy to hit: each arrow is at least 0.8x a letter-key height,
   // and is square whenever the bottom row has enough height.
-  let arrowSide=max(letterHeight*0.8,min(letterHeight,height))
+  // Two square arrow keys stack vertically, so the row itself is tall enough
+  // for the complete inverted-T cluster. Each arrow is >= 0.8x letter height.
+  let arrowSide=max(letterHeight*0.8,min(letterHeight,(height-3)/2))
   let arrowWidth=arrowSide*3+6
   let gaps=gap*7
   let remaining=max(1,totalWidth-arrowWidth-gaps)
@@ -244,7 +248,7 @@ private struct MacKeyboard:View {
  }
 
  private func arrowCluster(side:CGFloat,height:CGFloat,font:CGFloat)->some View {
-  // ↑ sits over ↓. Each key is square; the cluster may be taller than the other bottom keys.
+  // ↑ sits over ↓. The whole cluster is contained by the bottom row.
   return ZStack(alignment:.bottom) {
    HStack(spacing:3) {
     arrowKey("←",code:123,width:side,height:side,font:font)
@@ -254,7 +258,7 @@ private struct MacKeyboard:View {
    arrowKey("↑",code:126,width:side,height:side,font:font)
     .offset(y:-(side+3))
   }
-  .frame(width:side*3+6,height:max(height,side*2+3),alignment:.bottom)
+  .frame(width:side*3+6,height:height,alignment:.bottom)
  }
 
  private func arrowKey(_ label:String,code:UInt16,width:CGFloat,height:CGFloat,font:CGFloat)->some View {
