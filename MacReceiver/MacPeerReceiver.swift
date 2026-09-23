@@ -15,6 +15,7 @@ import Network
  private var udpListener:NWListener?
  private var udpConnections:[NWConnection]=[]
  private var udpPacketCount=0
+ private var udpConnectionCount=0
 
  override init(){super.init();session.delegate=self;advertiser.delegate=self;advertiser.startAdvertisingPeer();startUDPListener()}
  func stop(){advertiser.stopAdvertisingPeer();session.disconnect();udpListener?.cancel()}
@@ -34,11 +35,27 @@ import Network
     }
    }
    listener.newConnectionHandler={ [weak self] connection in
-    Task { @MainActor [weak self] in
-     guard let self=self else{return}
-     self.udpConnections.append(connection)
-     self.receiveUDP(on:connection)
+    guard let self else{return}
+    connection.stateUpdateHandler={ [weak self,weak connection] state in
+     Task{@MainActor in
+      guard let self else{return}
+      switch state{
+      case .ready:
+       self.udpConnectionCount += 1
+       self.realtimeStatus="UDP: 客户端已连接 (\(self.udpConnectionCount))，等待指针包…"
+      case .failed(let e):
+       self.realtimeStatus="UDP连接失败: \(e.localizedDescription)"
+       if let connection { self.udpConnections.removeAll{$0 === connection} }
+      case .cancelled:
+       if let connection { self.udpConnections.removeAll{$0 === connection} }
+      default:break
+      }
+     }
     }
+    Task{@MainActor in
+     self.udpConnections.append(connection)
+    }
+    self.receiveUDP(on:connection)
    }
    listener.start(queue:udpQueue);udpListener=listener
   }catch{realtimeStatus="UDP: \(error.localizedDescription)"}
@@ -46,13 +63,19 @@ import Network
 
  nonisolated private func receiveUDP(on connection:NWConnection){
   connection.start(queue:udpQueue)
-  func next(){
-   connection.receiveMessage{ [weak self] data,_,_,error in
-    if let data=data { self?.handleUDPPacket(data) }
-    if error == nil { next() }
+  receiveNextUDP(on:connection)
+ }
+
+ nonisolated private func receiveNextUDP(on connection:NWConnection){
+  connection.receiveMessage{ [weak self,weak connection] data,context,isComplete,error in
+   guard let self,let connection else{return}
+   if let data,!data.isEmpty { self.handleUDPPacket(data) }
+   if let error {
+    Task{@MainActor in self.realtimeStatus="UDP接收失败: \(error.localizedDescription)"}
+    return
    }
+   self.receiveNextUDP(on:connection)
   }
-  next()
  }
 
  nonisolated private func handleUDPPacket(_ data:Data){
