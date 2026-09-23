@@ -30,7 +30,13 @@ struct iPadTrackpadView:View {
      trackpad
     } else if landscape {
      HStack(spacing:12) {
-      if swapped { keyboard(compact:true); trackpad } else { trackpad; keyboard(compact:true) }
+      if swapped {
+       keyboard(compact:true).frame(width:max(560,geo.size.width*0.66))
+       trackpad.frame(minWidth:220)
+      } else {
+       trackpad.frame(minWidth:220)
+       keyboard(compact:true).frame(width:max(560,geo.size.width*0.66))
+      }
      }
     } else {
      VStack(spacing:12) {
@@ -117,10 +123,7 @@ private struct MacKeyboard:View {
      fixedKey(KeySpec(label:"",code:49,width:4.2),unit:unit)
      modifierKey("⌘",active:command,units:1.2,unit:unit){command.toggle()}
      modifierKey("option",active:option,units:1.15,unit:unit){option.toggle()}
-     fixedKey(KeySpec(label:"←",code:123),unit:unit)
-     fixedKey(KeySpec(label:"↓",code:125),unit:unit)
-     fixedKey(KeySpec(label:"↑",code:126),unit:unit)
-     fixedKey(KeySpec(label:"→",code:124),unit:unit)
+     arrowCluster(unit:unit)
     }
    }
    .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.center)
@@ -132,13 +135,37 @@ private struct MacKeyboard:View {
 
  private func functionRow(unit:CGFloat)->some View {
   HStack(spacing:gap) {
-   fixedKey(KeySpec(label:"esc",code:53),unit:unit)
-   ForEach(1...12,id:\.self){n in fixedKey(KeySpec(label:"F\(n)",code:functionCode(n)),unit:unit,small:true)}
+   flexibleKey("esc",code:53)
+   ForEach(1...12,id:\.self){n in flexibleKey("F\(n)",code:functionCode(n),small:true)}
   }
+  .frame(maxWidth:.infinity)
  }
 
  private func keyboardRow(_ keys:[KeySpec],unit:CGFloat)->some View {
   HStack(spacing:gap){ForEach(keys){k in fixedKey(k,unit:unit)}}
+ }
+
+ private func flexibleKey(_ label:String,code:UInt16,small:Bool=false)->some View {
+  Button{send(code,flags);if shift{shift=false}} label:{
+   Text(label).font(.system(size:compact ? (small ? 9:11):(small ? 11:15),weight:.medium,design:.rounded))
+    .frame(maxWidth:.infinity,maxHeight:.infinity)
+  }
+  .buttonStyle(KeyboardKeyStyle())
+  .frame(maxWidth:.infinity,minHeight:height,maxHeight:height)
+ }
+
+ private func arrowCluster(unit:CGFloat)->some View {
+  VStack(spacing:2) {
+   fixedKey(KeySpec(label:"↑",code:126),unit:unit)
+    .frame(height:(height-2)/2)
+   HStack(spacing:2) {
+    fixedKey(KeySpec(label:"←",code:123),unit:unit)
+    fixedKey(KeySpec(label:"↓",code:125),unit:unit)
+    fixedKey(KeySpec(label:"→",code:124),unit:unit)
+   }
+   .frame(height:(height-2)/2)
+  }
+  .frame(width:unit*3+4,height:height)
  }
 
  private func fixedKey(_ spec:KeySpec,unit:CGFloat,small:Bool=false)->some View {
