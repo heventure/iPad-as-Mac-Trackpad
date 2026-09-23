@@ -18,6 +18,7 @@ import UIKit
  private var udpBrowser:NWBrowser?
  private var udpConnection:NWConnection?
  private var udpSendCount=0
+ private var udpSendInFlight=false
 
  override init(){super.init();session.delegate=self;browser.delegate=self;browser.startBrowsingForPeers();startUDPDiscovery()}
 
@@ -29,9 +30,12 @@ import UIKit
   var data=Data([1])
   appendFloat32(Float32(dx),to:&data);appendFloat32(Float32(dy),to:&data)
   udpSendCount += 1
-  if udpSendCount == 1 || udpSendCount % 100 == 0 { realtimeStatus="UDP: 已发送 \(udpSendCount) 个指针包" }
-  connection.send(content:data,completion:.contentProcessed({ [weak self] error in
-   if let error { Task { @MainActor in self?.realtimeStatus="UDP发送失败: \(error.localizedDescription)" } }
+  connection.send(content:data,contentContext:.defaultMessage,isComplete:true,completion:.contentProcessed({ [weak self] error in
+   Task { @MainActor in
+    guard let self else{return}
+    if let error { self.realtimeStatus="UDP发送失败: \(error.localizedDescription)" }
+    else if self.udpSendCount == 1 || self.udpSendCount % 100 == 0 { self.realtimeStatus="UDP: 已确认发送 \(self.udpSendCount) 个 datagram" }
+   }
   }))
  }
 
