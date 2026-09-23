@@ -15,6 +15,9 @@ struct iPadTrackpadView: View {
                     Text("iPad Remote").font(.title2.bold())
                     Text(peer.statusText).font(.subheadline)
                         .foregroundStyle(peer.connectedPeerName == nil ? Color.secondary : Color.green)
+                    Text(peer.realtimeStatus)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.cyan)
                 }
                 Spacer()
                 Circle().fill(peer.connectedPeerName == nil ? Color.orange : Color.green).frame(width:12,height:12)
