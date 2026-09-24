@@ -18,6 +18,8 @@ import Darwin
  private var udpPacketCount=0
  private var udpConnectionCount=0
  private var advertiserRestartWorkItem:DispatchWorkItem?
+ private var pendingInvitationPeer:MCPeerID?
+ private var chosenPeer:MCPeerID?
 
  override init(){super.init();print("[UDP-Mac] init");session.delegate=self;advertiser.delegate=self;advertiser.startAdvertisingPeer();startUDPListener()}
  func stop(){
@@ -153,7 +155,8 @@ import Darwin
  }
 
  private func sendUDPEndpointToConnectedPeers(){
-  for peer in session.connectedPeers { sendUDPEndpoint(to:peer) }
+  guard let peer=chosenPeer,session.connectedPeers.contains(peer) else{return}
+  sendUDPEndpoint(to:peer)
  }
 
  nonisolated private func handleUDPPacket(_ data:Data){
@@ -170,9 +173,20 @@ import Darwin
 }
 extension MacPeerReceiver:MCNearbyServiceAdvertiserDelegate{
  nonisolated func advertiser(_ advertiser:MCNearbyServiceAdvertiser,didReceiveInvitationFromPeer peerID:MCPeerID,withContext context:Data?,invitationHandler:@escaping(Bool,MCSession?)->Void){Task{@MainActor in
+  guard let context,String(data:context,encoding:.utf8)=="role=ipad" else{
+   print("[MC-Mac] rejected peer with invalid role context=\(peerID.displayName)")
+   invitationHandler(false,nil)
+   return
+  }
   if peerID.displayName==self.peerID.displayName{print("[MC-Mac] rejected same-name peer=\(peerID.displayName)");invitationHandler(false,nil);return}
-  let accept=self.session.connectedPeers.isEmpty || self.session.connectedPeers.contains(peerID)
-  invitationHandler(accept,accept ? self.session:nil)
+  guard self.session.connectedPeers.isEmpty,self.pendingInvitationPeer==nil,self.chosenPeer==nil else{
+   print("[MC-Mac] rejected extra invitation peer=\(peerID.displayName)")
+   invitationHandler(false,nil)
+   return
+  }
+  self.pendingInvitationPeer=peerID
+  print("[MC-Mac] accepted invitation peer=\(peerID.displayName)")
+  invitationHandler(true,self.session)
  }}
  nonisolated func advertiser(_ advertiser:MCNearbyServiceAdvertiser,didNotStartAdvertisingPeer error:Error){Task{@MainActor in self.statusText="广播失败：\(error.localizedDescription)"}}
 }
@@ -181,14 +195,24 @@ extension MacPeerReceiver:MCSessionDelegate{
   Task{@MainActor in
    switch state{
    case .connected:
+    guard self.chosenPeer==nil || self.chosenPeer==peerID else{
+     print("[MC-Mac] multiple peers detected; disconnecting session unexpected=\(peerID.displayName)")
+     self.session.disconnect()
+     return
+    }
+    self.pendingInvitationPeer=nil
+    self.chosenPeer=peerID
     self.advertiserRestartWorkItem?.cancel()
     self.advertiserRestartWorkItem=nil
     self.connectedPeerName=peerID.displayName
     self.statusText="已连接 \(peerID.displayName)"
     self.sendUDPEndpoint(to:peerID)
    case .connecting:
+    if self.pendingInvitationPeer==nil {self.pendingInvitationPeer=peerID}
     self.statusText="正在连接 \(peerID.displayName)…"
    case .notConnected:
+    if self.pendingInvitationPeer==peerID {self.pendingInvitationPeer=nil}
+    if self.chosenPeer==peerID {self.chosenPeer=nil}
     MouseController.releaseAllKeys()
     if self.session.connectedPeers.isEmpty {
      self.connectedPeerName=nil
@@ -201,7 +225,12 @@ extension MacPeerReceiver:MCSessionDelegate{
    }
   }
  }
- nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){guard let m=try? PropertyListDecoder().decode(PointerMessage.self,from:data) else{return};MouseController.handle(m)}
+ nonisolated func session(_ session:MCSession,didReceive data:Data,fromPeer peerID:MCPeerID){
+  Task{@MainActor in
+   guard self.chosenPeer==peerID,self.session.connectedPeers.contains(peerID),let message=try? PropertyListDecoder().decode(PointerMessage.self,from:data) else{return}
+   MouseController.handle(message)
+  }
+ }
  nonisolated func session(_ session:MCSession,didReceive stream:InputStream,withName streamName:String,fromPeer peerID:MCPeerID){}
  nonisolated func session(_ session:MCSession,didStartReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,with progress:Progress){}
  nonisolated func session(_ session:MCSession,didFinishReceivingResourceWithName resourceName:String,fromPeer peerID:MCPeerID,at localURL:URL?,withError error:Error?){}
