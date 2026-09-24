@@ -78,6 +78,15 @@ import UIKit
   }))
  }
 
+ // Analog joystick velocity uses UDP type 2. vx/vy are normalized -1...1 values.
+ func sendAnalogPointerUDP(vx:Double,vy:Double){
+  guard connectedPeerName != nil,let connection=udpConnection else{return}
+  var data=Data([2])
+  appendFloat32(Float32(vx),to:&data)
+  appendFloat32(Float32(vy),to:&data)
+  connection.send(content:data,contentContext:.defaultMessage,isComplete:true,completion:.idempotent)
+ }
+
  // Clicks, scrolling and keyboard remain on the encrypted control channel.
  func send(_ message:PointerMessage){
   guard let peer=chosenPeer,session.connectedPeers.contains(peer),let data=try? PropertyListEncoder().encode(message) else{return}
