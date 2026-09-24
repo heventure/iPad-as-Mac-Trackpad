@@ -109,7 +109,7 @@ import UIKit
  }
 
  private func publishDiscoveredMacs(){
-  discoveredMacNames=discoveredPeers.map(\.displayName).sorted{$0.localizedCaseInsensitiveCompare($1)==.orderedAscending}
+  discoveredMacNames=discoveredPeers.map(\.displayName).sorted{$0.localizedCaseInsensitiveCompare($1) == .orderedAscending}
  }
 
  private func appendFloat32(_ value:Float32,to data:inout Data){
