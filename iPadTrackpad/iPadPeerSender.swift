@@ -14,13 +14,16 @@ import UIKit
  private lazy var browser=MCNearbyServiceBrowser(peer:peerID,serviceType:serviceType)
  private var discoveredPeers=Set<MCPeerID>()
  private var lastInviteAt:[MCPeerID:Date]=[:]
+ private var retryAfter:[MCPeerID:Date]=[:]
  private var pendingInvitePeer:MCPeerID?
  private var pendingInviteStartedAt:Date?
  private var chosenPeer:MCPeerID?
+ private var preferredPeerName:String?
  private var reconnectTimer:Timer?
  private var browserStarted=false
  private var lastBrowserRestart=Date.distantPast
  private let inviteRetryInterval:TimeInterval=6
+ private let failedPeerCooldown:TimeInterval=20
  private let browserRestartInterval:TimeInterval=8
 
  private let udpQueue=DispatchQueue(label:"ipadpad.udp.sender",qos:.userInteractive)
@@ -30,6 +33,7 @@ import UIKit
  override init(){
   super.init()
   print("[UDP-iPad] init")
+  preferredPeerName=UserDefaults.standard.string(forKey:"preferredMacPeerName")
   session.delegate=self
   browser.delegate=self
   startBrowsing()
@@ -108,22 +112,48 @@ import UIKit
  private func recoverConnectionIfNeeded(){
   guard session.connectedPeers.isEmpty else{return}
   let now=Date()
-  if let started=pendingInviteStartedAt,now.timeIntervalSince(started) >= inviteRetryInterval {
-   print("[MC-iPad] pending invite timed out peer=\(pendingInvitePeer?.displayName ?? "-")")
+  if let peer=pendingInvitePeer,let started=pendingInviteStartedAt,now.timeIntervalSince(started) >= inviteRetryInterval {
+   print("[MC-iPad] pending invite timed out peer=\(peer.displayName)")
+   markPeerFailed(peer,now:now)
    pendingInvitePeer=nil
    pendingInviteStartedAt=nil
   }
   if pendingInvitePeer != nil {return}
-  if now.timeIntervalSince(lastBrowserRestart) >= browserRestartInterval {
-   restartBrowsing()
+
+  if let peer=nextCandidate(now:now) {
+   inviteIfNeeded(peer,now:now)
    return
   }
-  guard let peer=discoveredPeers.first else{return}
-  inviteIfNeeded(peer,now:now)
+
+  if now.timeIntervalSince(lastBrowserRestart) >= browserRestartInterval {
+   restartBrowsing()
+  }
+ }
+
+ private func nextCandidate(now:Date)->MCPeerID?{
+  let available=discoveredPeers.filter { peer in
+   if let until=retryAfter[peer],until>now{return false}
+   if let last=lastInviteAt[peer],now.timeIntervalSince(last)<inviteRetryInterval{return false}
+   return true
+  }
+  if let preferredPeerName,
+     let preferred=available.first(where:{$0.displayName==preferredPeerName}) {
+   return preferred
+  }
+  return available.min { lhs,rhs in
+   (lastInviteAt[lhs] ?? .distantPast) < (lastInviteAt[rhs] ?? .distantPast)
+  }
+ }
+
+ private func markPeerFailed(_ peer:MCPeerID,now:Date=Date()){
+  retryAfter[peer]=now.addingTimeInterval(failedPeerCooldown)
+  lastInviteAt[peer]=now
+  print("[MC-iPad] cooling down peer=\(peer.displayName) for \(Int(failedPeerCooldown))s")
  }
 
  private func inviteIfNeeded(_ peer:MCPeerID,now:Date=Date()){
   guard session.connectedPeers.isEmpty,pendingInvitePeer==nil,chosenPeer==nil else{return}
+  if let until=retryAfter[peer],until>now{return}
   if let last=lastInviteAt[peer],now.timeIntervalSince(last) < inviteRetryInterval{return}
   lastInviteAt[peer]=now
   pendingInvitePeer=peer
@@ -184,6 +214,7 @@ extension iPadPeerSender:MCNearbyServiceBrowserDelegate{
   Task{@MainActor in
    self.discoveredPeers.remove(peerID)
    self.lastInviteAt.removeValue(forKey:peerID)
+   self.retryAfter.removeValue(forKey:peerID)
    if self.pendingInvitePeer==peerID {
     self.pendingInvitePeer=nil
     self.pendingInviteStartedAt=nil
@@ -208,7 +239,10 @@ extension iPadPeerSender:MCSessionDelegate{
     self.pendingInvitePeer=nil
     self.pendingInviteStartedAt=nil
     self.lastInviteAt.removeValue(forKey:peerID)
+    self.retryAfter.removeValue(forKey:peerID)
     self.chosenPeer=peerID
+    self.preferredPeerName=peerID.displayName
+    UserDefaults.standard.set(peerID.displayName,forKey:"preferredMacPeerName")
     self.connectedPeerName=peerID.displayName
     self.statusText="已连接 \(peerID.displayName)"
     self.resetUDP(status:"UDP: 等待 Mac endpoint…")
@@ -216,7 +250,8 @@ extension iPadPeerSender:MCSessionDelegate{
     if self.pendingInvitePeer==nil {self.pendingInvitePeer=peerID;self.pendingInviteStartedAt=Date()}
     self.statusText="正在连接 \(peerID.displayName)…"
    case .notConnected:
-    self.lastInviteAt.removeValue(forKey:peerID)
+    let failedBeforeConnect=self.pendingInvitePeer==peerID && self.chosenPeer != peerID
+    if failedBeforeConnect {self.markPeerFailed(peerID)}
     if self.pendingInvitePeer==peerID {
      self.pendingInvitePeer=nil
      self.pendingInviteStartedAt=nil
