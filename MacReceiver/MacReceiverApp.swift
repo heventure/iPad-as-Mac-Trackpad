@@ -6,7 +6,7 @@ import SwiftUI
  var body:some Scene {
   WindowGroup {
    MacReceiverView(receiver:receiver)
-    .frame(minWidth:440,minHeight:330)
+    .frame(width:440,height:330)
   }
   .windowResizability(.contentSize)
  }
