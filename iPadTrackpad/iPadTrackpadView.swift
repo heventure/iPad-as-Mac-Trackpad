@@ -433,7 +433,7 @@ private struct AnalogPointerJoystick:View {
   knob=CGSize(width:dx*scale,height:dy*scale)
   let normalized=min(1,distance/radius)
   guard normalized>deadZone else {
-   velocity=.zero
+   velocity = .zero
    stopTimerOnly()
    return
   }
@@ -466,7 +466,7 @@ private struct AnalogPointerJoystick:View {
 
  private func stop(){
   stopTimerOnly()
-  velocity=.zero
+  velocity = .zero
   knob = .zero
  }
 }
