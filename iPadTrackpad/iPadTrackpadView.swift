@@ -9,6 +9,7 @@ struct iPadTrackpadView:View {
  @State private var landscapeKeyboardShare:CGFloat=0.618
  @State private var portraitTrackpadShare:CGFloat=0.618
  @State private var joystickArrows=false
+ @State private var pointerJoystick=false
 
  var body:some View {
   GeometryReader { geo in
@@ -46,6 +47,12 @@ struct iPadTrackpadView:View {
       .accessibilityLabel("选择 Mac")
      }
      if mode==1 {
+      Toggle(isOn:$pointerJoystick) {
+       Label("指针摇杆",systemImage:"scope")
+      }
+      .toggleStyle(.button)
+      .buttonStyle(.bordered)
+      .accessibilityLabel("触控板与指针摇杆切换")
       Toggle(isOn:$joystickArrows) {
        Label("摇杆",systemImage:"dot.circle.and.hand.point.up.left.fill")
       }
@@ -67,7 +74,7 @@ struct iPadTrackpadView:View {
       swapped:swapped,
       landscapeKeyboardShare:$landscapeKeyboardShare,
       portraitTrackpadShare:$portraitTrackpadShare,
-      trackpad:{trackpad},
+      trackpad:{pointerSurface},
       keyboard:{keyboard(compact:landscape)}
      )
     }
@@ -77,6 +84,15 @@ struct iPadTrackpadView:View {
      Text(String(format:"%.1fx",sensitivity)).font(.system(.footnote,design:.monospaced)).frame(width:42)
     }.foregroundStyle(.secondary)
    }.padding(landscape ? 16:20).background(Color.black.ignoresSafeArea())
+  }
+ }
+
+ @ViewBuilder private var pointerSurface:some View {
+  if pointerJoystick {
+   AnalogPointerJoystick(sensitivity:sensitivity){vx,vy in peer.sendAnalogPointerUDP(vx:vx,vy:vy)}
+    .frame(maxWidth:.infinity,maxHeight:.infinity)
+  } else {
+   trackpad
   }
  }
 
@@ -360,6 +376,100 @@ private struct MacKeyboard:View {
  }
 }
 
+
+private struct AnalogPointerJoystick:View {
+ let sensitivity:Double
+ let send:(Double,Double)->Void
+ @State private var knob=CGSize.zero
+ @State private var velocity=CGVector.zero
+ @State private var timer:Timer?
+ private let deadZone:CGFloat=0.14
+
+ var body:some View {
+  GeometryReader { geo in
+   let diameter=max(120,min(geo.size.width,geo.size.height)*0.72)
+   let knobSize=max(54,diameter*0.28)
+   let radius=max(1,(diameter-knobSize)/2-8)
+   ZStack {
+    RoundedRectangle(cornerRadius:18,style:.continuous).fill(Color.white.opacity(0.035))
+    Circle()
+     .fill(Color.white.opacity(0.08))
+     .overlay(Circle().stroke(Color.white.opacity(0.16),lineWidth:1))
+     .frame(width:diameter,height:diameter)
+    Circle()
+     .stroke(Color.white.opacity(0.12),style:StrokeStyle(lineWidth:1,dash:[5,5]))
+     .frame(width:diameter*deadZone*2,height:diameter*deadZone*2)
+    ForEach(0..<8,id:\.self) { i in
+     Image(systemName:"triangle.fill")
+      .font(.system(size:max(8,diameter*0.035),weight:.bold))
+      .foregroundStyle(Color.secondary.opacity(0.55))
+      .offset(y:-diameter*0.42)
+      .rotationEffect(.degrees(Double(i)*45))
+    }
+    Circle()
+     .fill(Color.white.opacity(0.22))
+     .overlay(Circle().stroke(Color.white.opacity(0.28),lineWidth:1))
+     .frame(width:knobSize,height:knobSize)
+     .offset(knob)
+     .animation(.interactiveSpring(response:0.12,dampingFraction:0.82),value:knob)
+   }
+   .contentShape(Rectangle())
+   .gesture(
+    DragGesture(minimumDistance:0)
+     .onChanged { value in
+      let center=CGPoint(x:geo.size.width/2,y:geo.size.height/2)
+      update(dx:value.location.x-center.x,dy:value.location.y-center.y,radius:radius)
+     }
+     .onEnded { _ in stop() }
+   )
+  }
+  .onDisappear { stop() }
+  .accessibilityLabel("模拟量指针摇杆")
+ }
+
+ private func update(dx:CGFloat,dy:CGFloat,radius:CGFloat){
+  let distance=sqrt(dx*dx+dy*dy)
+  let scale=distance>radius ? radius/distance : 1
+  knob=CGSize(width:dx*scale,height:dy*scale)
+  let normalized=min(1,distance/radius)
+  guard normalized>deadZone else {
+   velocity=.zero
+   stopTimerOnly()
+   return
+  }
+  let magnitude=(normalized-deadZone)/(1-deadZone)
+  let curved=magnitude*magnitude
+  let directionX=dx/max(distance,0.001)
+  let directionY=dy/max(distance,0.001)
+  velocity=CGVector(dx:directionX*curved*CGFloat(sensitivity),dy:directionY*curved*CGFloat(sensitivity))
+  startTimerIfNeeded()
+ }
+
+ private func startTimerIfNeeded(){
+  guard timer==nil else{return}
+  sendCurrent()
+  timer=Timer.scheduledTimer(withTimeInterval:1.0/60.0,repeats:true){ _ in
+   sendCurrent()
+  }
+ }
+
+ private func sendCurrent(){
+  let v=velocity
+  guard v.dx != 0 || v.dy != 0 else{return}
+  send(Double(v.dx),Double(v.dy))
+ }
+
+ private func stopTimerOnly(){
+  timer?.invalidate()
+  timer=nil
+ }
+
+ private func stop(){
+  stopTimerOnly()
+  velocity=.zero
+  knob = .zero
+ }
+}
 
 private struct EightWayArrowJoystick:View {
  let width:CGFloat
