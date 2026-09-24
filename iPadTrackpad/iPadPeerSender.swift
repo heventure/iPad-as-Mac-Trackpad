@@ -7,6 +7,8 @@ import UIKit
  @Published private(set)var connectedPeerName:String?
  @Published private(set)var statusText="正在搜索 Mac…"
  @Published private(set)var realtimeStatus="UDP: 搜索 Mac…"
+ @Published private(set)var discoveredMacNames:[String]=[]
+ @Published private(set)var preferredMacName:String?
 
  private let serviceType="ipadpad"
  private let peerID=MCPeerID(displayName:UIDevice.current.name)
@@ -34,6 +36,7 @@ import UIKit
   super.init()
   print("[UDP-iPad] init")
   preferredPeerName=UserDefaults.standard.string(forKey:"preferredMacPeerName")
+  preferredMacName=preferredPeerName
   session.delegate=self
   browser.delegate=self
   startBrowsing()
@@ -76,6 +79,37 @@ import UIKit
  func send(_ message:PointerMessage){
   guard let peer=chosenPeer,session.connectedPeers.contains(peer),let data=try? PropertyListEncoder().encode(message) else{return}
   try? session.send(data,toPeers:[peer],with:.unreliable)
+ }
+
+ func selectMac(named name:String){
+  guard let target=discoveredPeers.first(where:{$0.displayName==name}) else{return}
+  preferredPeerName=name
+  preferredMacName=name
+  UserDefaults.standard.set(name,forKey:"preferredMacPeerName")
+  retryAfter.removeValue(forKey:target)
+  lastInviteAt.removeValue(forKey:target)
+
+  if chosenPeer==target,session.connectedPeers.contains(target){return}
+
+  print("[MC-iPad] manual select peer=\(name)")
+  pendingInvitePeer=nil
+  pendingInviteStartedAt=nil
+  chosenPeer=nil
+  connectedPeerName=nil
+  resetUDP(status:"UDP: 正在切换 Mac…")
+  statusText="正在切换到 \(name)…"
+
+  if !session.connectedPeers.isEmpty {
+   session.disconnect()
+  }
+  DispatchQueue.main.asyncAfter(deadline:.now() + .milliseconds(350)){ [weak self] in
+   guard let self,self.chosenPeer==nil,self.session.connectedPeers.isEmpty else{return}
+   self.inviteIfNeeded(target)
+  }
+ }
+
+ private func publishDiscoveredMacs(){
+  discoveredMacNames=discoveredPeers.map(\.displayName).sorted{$0.localizedCaseInsensitiveCompare($1)==.orderedAscending}
  }
 
  private func appendFloat32(_ value:Float32,to data:inout Data){
@@ -206,6 +240,7 @@ extension iPadPeerSender:MCNearbyServiceBrowserDelegate{
   }
   Task{@MainActor in
    self.discoveredPeers.insert(peerID)
+   self.publishDiscoveredMacs()
    self.inviteIfNeeded(peerID)
   }
  }
@@ -213,6 +248,7 @@ extension iPadPeerSender:MCNearbyServiceBrowserDelegate{
  nonisolated func browser(_ browser:MCNearbyServiceBrowser,lostPeer peerID:MCPeerID){
   Task{@MainActor in
    self.discoveredPeers.remove(peerID)
+   self.publishDiscoveredMacs()
    self.lastInviteAt.removeValue(forKey:peerID)
    self.retryAfter.removeValue(forKey:peerID)
    if self.pendingInvitePeer==peerID {
@@ -242,6 +278,7 @@ extension iPadPeerSender:MCSessionDelegate{
     self.retryAfter.removeValue(forKey:peerID)
     self.chosenPeer=peerID
     self.preferredPeerName=peerID.displayName
+    self.preferredMacName=peerID.displayName
     UserDefaults.standard.set(peerID.displayName,forKey:"preferredMacPeerName")
     self.connectedPeerName=peerID.displayName
     self.statusText="已连接 \(peerID.displayName)"
