@@ -17,10 +17,34 @@ struct iPadTrackpadView:View {
     HStack {
      VStack(alignment:.leading,spacing:3) {
       Text("iPad Remote").font(.title2.bold())
-      Text(peer.statusText).font(.subheadline).foregroundStyle(peer.connectedPeerName == nil ? Color.secondary : Color.green)
+      if let connected=peer.connectedPeerName {
+       Label("当前 Mac：\(connected)",systemImage:"desktopcomputer")
+        .font(.subheadline.weight(.semibold)).foregroundStyle(Color.green)
+      } else {
+       Text(peer.statusText).font(.subheadline).foregroundStyle(Color.secondary)
+      }
       Text(peer.realtimeStatus).font(.system(.caption,design:.monospaced)).foregroundStyle(.cyan)
      }
      Spacer()
+     if !peer.discoveredMacNames.isEmpty {
+      Menu {
+       ForEach(peer.discoveredMacNames,id:\.self) { name in
+        Button {
+         peer.selectMac(named:name)
+        } label: {
+         HStack {
+          Text(name)
+          if peer.connectedPeerName==name {Image(systemName:"checkmark")}
+          else if peer.preferredMacName==name {Image(systemName:"star.fill")}
+         }
+        }
+       }
+      } label: {
+       Label("Mac",systemImage:"desktopcomputer")
+      }
+      .buttonStyle(.bordered)
+      .accessibilityLabel("选择 Mac")
+     }
      if mode==1 {
       Toggle(isOn:$joystickArrows) {
        Label("摇杆",systemImage:"dot.circle.and.hand.point.up.left.fill")
