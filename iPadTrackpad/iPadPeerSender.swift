@@ -24,7 +24,9 @@ import UIKit
  private var reconnectTimer:Timer?
  private var browserStarted=false
  private var lastBrowserRestart=Date.distantPast
+ private var preferredDiscoveryDeadline:Date?
  private let inviteRetryInterval:TimeInterval=6
+ private let preferredDiscoveryGrace:TimeInterval=7
  private let failedPeerCooldown:TimeInterval=20
  private let browserRestartInterval:TimeInterval=8
 
@@ -37,6 +39,7 @@ import UIKit
   print("[UDP-iPad] init")
   preferredPeerName=UserDefaults.standard.string(forKey:"preferredMacPeerName")
   preferredMacName=preferredPeerName
+  if preferredPeerName != nil {preferredDiscoveryDeadline=Date().addingTimeInterval(preferredDiscoveryGrace)}
   session.delegate=self
   browser.delegate=self
   startBrowsing()
@@ -86,8 +89,9 @@ import UIKit
   preferredPeerName=name
   preferredMacName=name
   UserDefaults.standard.set(name,forKey:"preferredMacPeerName")
-  retryAfter.removeValue(forKey:target)
+  retryAfter.removeAll()
   lastInviteAt.removeValue(forKey:target)
+  preferredDiscoveryDeadline=nil
 
   if chosenPeer==target,session.connectedPeers.contains(target){return}
 
@@ -153,6 +157,15 @@ import UIKit
    pendingInviteStartedAt=nil
   }
   if pendingInvitePeer != nil {return}
+
+  if let preferredPeerName,
+     let deadline=preferredDiscoveryDeadline,
+     now<deadline,
+     !discoveredPeers.contains(where:{$0.displayName==preferredPeerName}) {
+   statusText="等待偏好设备 \(preferredPeerName)…"
+   return
+  }
+  preferredDiscoveryDeadline=nil
 
   if let peer=nextCandidate(now:now) {
    inviteIfNeeded(peer,now:now)
@@ -241,7 +254,12 @@ extension iPadPeerSender:MCNearbyServiceBrowserDelegate{
   Task{@MainActor in
    self.discoveredPeers.insert(peerID)
    self.publishDiscoveredMacs()
-   self.inviteIfNeeded(peerID)
+   if peerID.displayName==self.preferredPeerName {
+    self.preferredDiscoveryDeadline=nil
+    self.inviteIfNeeded(peerID)
+   } else if self.preferredDiscoveryDeadline==nil {
+    self.inviteIfNeeded(peerID)
+   }
   }
  }
 
