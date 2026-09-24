@@ -39,6 +39,19 @@ import Darwin
   if connectedPeerName==nil{statusText="等待 iPad 连接…"}
  }
 
+ func disconnectCurrentPeer(){
+  guard chosenPeer != nil || !session.connectedPeers.isEmpty else{return}
+  print("[MC-Mac] user requested disconnect")
+  MouseController.releaseAllKeys()
+  pendingInvitationPeer=nil
+  chosenPeer=nil
+  session.disconnect()
+  connectedPeerName=nil
+  statusText="等待 iPad 连接…"
+  resetUDPClients()
+  scheduleAdvertisingRestart()
+ }
+
  private func scheduleAdvertisingRestart(){
   advertiserRestartWorkItem?.cancel()
   let work=DispatchWorkItem{ [weak self] in
