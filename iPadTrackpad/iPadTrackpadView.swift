@@ -4,93 +4,248 @@ import UIKit
 struct iPadTrackpadView:View {
  @ObservedObject var peer:iPadPeerSender
  @State private var sensitivity=1.2
- @State private var mode=0
+ @State private var keyboardVisible=false
  @State private var swapped=false
  @State private var landscapeKeyboardShare:CGFloat=0.618
  @State private var portraitTrackpadShare:CGFloat=0.618
  @State private var joystickArrows=false
  @State private var pointerJoystick=false
+ @State private var settingsPresented=false
+ @State private var manualSwitchTarget:String?
+ @State private var switchSawDisconnect=false
+ @State private var connectionNotice:String?
 
  var body:some View {
   GeometryReader { geo in
    let landscape=geo.size.width>geo.size.height
    VStack(spacing:12) {
-    HStack {
-     VStack(alignment:.leading,spacing:3) {
-      Text("iPad Remote").font(.title2.bold())
-      if let connected=peer.connectedPeerName {
-       Label("当前 Mac：\(connected)",systemImage:"desktopcomputer")
-        .font(.subheadline.weight(.semibold)).foregroundStyle(Color.green)
-      } else {
-       Text(peer.statusText).font(.subheadline).foregroundStyle(Color.secondary)
-      }
-      Text(peer.realtimeStatus).font(.system(.caption,design:.monospaced)).foregroundStyle(.cyan)
-     }
-     Spacer()
-     if !peer.discoveredMacNames.isEmpty {
-      Menu {
-       ForEach(peer.discoveredMacNames,id:\.self) { name in
-        Button {
-         peer.selectMac(named:name)
-        } label: {
-         HStack {
-          Text(name)
-          if peer.connectedPeerName==name {Image(systemName:"checkmark")}
-          else if peer.preferredMacName==name {Image(systemName:"star.fill")}
-         }
-        }
-       }
-      } label: {
-       Label("Mac",systemImage:"desktopcomputer")
-      }
-      .buttonStyle(.bordered)
-      .accessibilityLabel("选择 Mac")
-     }
-     if mode==1 {
-      Toggle(isOn:$pointerJoystick) {
-       Label("指针摇杆",systemImage:"scope")
-      }
-      .toggleStyle(.button)
-      .buttonStyle(.bordered)
-      .accessibilityLabel("触控板与指针摇杆切换")
-      Toggle(isOn:$joystickArrows) {
-       Label("摇杆",systemImage:"dot.circle.and.hand.point.up.left.fill")
-      }
-      .toggleStyle(.button)
-      .buttonStyle(.bordered)
-      .accessibilityLabel("方向键与八向摇杆切换")
-      Button { withAnimation(.snappy){swapped.toggle()} } label:{Image(systemName:"arrow.left.arrow.right").font(.title3)}
-       .buttonStyle(.bordered).accessibilityLabel("交换触控板和键盘")
-     }
-     Circle().fill(peer.connectedPeerName == nil ? .orange:.green).frame(width:12,height:12)
-    }
-    Picker("模式",selection:$mode){Text("触控板").tag(0);Text("触控板 + 键盘").tag(1)}.pickerStyle(.segmented)
+    deviceBar
 
-    if mode==0 {
-     trackpad
-    } else {
-     AdaptiveInputSplit(
-      landscape:landscape,
-      swapped:swapped,
-      landscapeKeyboardShare:$landscapeKeyboardShare,
-      portraitTrackpadShare:$portraitTrackpadShare,
-      trackpad:{pointerSurface},
-      keyboard:{keyboard(compact:landscape)}
-     )
+    if let connectionNotice {
+     HStack(spacing:8) {
+      Image(systemName:"exclamationmark.circle.fill")
+      Text(connectionNotice).lineLimit(2)
+      Spacer(minLength:8)
+      Button { self.connectionNotice=nil } label:{Image(systemName:"xmark")}
+       .buttonStyle(.plain)
+     }
+     .font(.footnote.weight(.medium))
+     .foregroundStyle(Color.orange)
+     .padding(.horizontal,12)
+     .padding(.vertical,8)
+     .background(Color.orange.opacity(0.10),in:RoundedRectangle(cornerRadius:12,style:.continuous))
+     .accessibilityIdentifier("connection-notice")
     }
 
-    HStack(spacing:12) {
-     Image(systemName:"tortoise");Slider(value:$sensitivity,in:0.5...2.5,step:0.1);Image(systemName:"hare")
-     Text(String(format:"%.1fx",sensitivity)).font(.system(.footnote,design:.monospaced)).frame(width:42)
-    }.foregroundStyle(.secondary)
-   }.padding(landscape ? 16:20).background(Color.black.ignoresSafeArea())
+    pointerModeBar
+
+    Group {
+     if keyboardVisible {
+      AdaptiveInputSplit(
+       landscape:landscape,
+       swapped:swapped,
+       landscapeKeyboardShare:$landscapeKeyboardShare,
+       portraitTrackpadShare:$portraitTrackpadShare,
+       trackpad:{pointerSurface},
+       keyboard:{keyboard(compact:landscape)}
+      )
+     } else {
+      pointerSurface
+     }
+    }
+    .frame(maxWidth:.infinity,maxHeight:.infinity)
+   }
+   .padding(landscape ? 14:18)
+   .background(
+    LinearGradient(
+     colors:[Color.black,Color(white:0.055)],
+     startPoint:.top,
+     endPoint:.bottom
+    ).ignoresSafeArea()
+   )
+   .onChange(of:peer.connectedPeerName){ newValue in
+    handleConnectionChange(newValue)
+   }
   }
+ }
+
+ private var deviceBar:some View {
+  HStack(spacing:10) {
+   Menu {
+    if peer.discoveredMacNames.isEmpty {
+     Text("正在搜索 Mac…")
+    } else {
+     ForEach(peer.discoveredMacNames,id:\.self) { name in
+      Button {
+       selectMac(name)
+      } label: {
+       HStack {
+        Text(name)
+        if peer.connectedPeerName==name {Image(systemName:"checkmark")}
+        else if peer.preferredMacName==name {Image(systemName:"star.fill")}
+       }
+      }
+     }
+    }
+   } label: {
+    HStack(spacing:10) {
+     Circle()
+      .fill(peer.connectedPeerName == nil ? Color.orange:Color.green)
+      .frame(width:9,height:9)
+      .shadow(color:(peer.connectedPeerName == nil ? Color.orange:Color.green).opacity(0.45),radius:4)
+     VStack(alignment:.leading,spacing:1) {
+      Text(peer.connectedPeerName ?? "正在连接 Mac…")
+       .font(.subheadline.weight(.semibold))
+       .foregroundStyle(Color.primary)
+       .lineLimit(1)
+      if peer.connectedPeerName == nil {
+       Text(peer.statusText)
+        .font(.caption2)
+        .foregroundStyle(Color.secondary)
+        .lineLimit(1)
+      } else {
+       Text("Connected")
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(Color.secondary)
+      }
+     }
+     Image(systemName:"chevron.up.chevron.down")
+      .font(.caption2.weight(.bold))
+      .foregroundStyle(Color.secondary)
+    }
+    .padding(.horizontal,12)
+    .padding(.vertical,8)
+    .background(Color.white.opacity(0.07),in:RoundedRectangle(cornerRadius:13,style:.continuous))
+    .overlay(RoundedRectangle(cornerRadius:13,style:.continuous).stroke(Color.white.opacity(0.08),lineWidth:1))
+   }
+   .accessibilityLabel("选择 Mac")
+   .accessibilityIdentifier("mac-selector")
+
+   Spacer(minLength:4)
+
+   Button {
+    withAnimation(.snappy){keyboardVisible.toggle()}
+   } label:{
+    Image(systemName:keyboardVisible ? "keyboard.fill":"keyboard")
+     .font(.system(size:17,weight:.semibold))
+     .frame(width:38,height:34)
+     .foregroundStyle(keyboardVisible ? Color.accentColor:Color.primary)
+   }
+   .buttonStyle(ProUtilityButtonStyle(active:keyboardVisible))
+   .accessibilityLabel(keyboardVisible ? "隐藏键盘":"显示键盘")
+   .accessibilityIdentifier("keyboard-toggle")
+
+   Button {
+    settingsPresented=true
+   } label:{
+    Image(systemName:"ellipsis")
+     .font(.system(size:18,weight:.bold))
+     .frame(width:38,height:34)
+   }
+   .buttonStyle(ProUtilityButtonStyle())
+   .accessibilityLabel("更多设置")
+   .accessibilityIdentifier("more-settings")
+   .popover(isPresented:$settingsPresented,attachmentAnchor:.rect(.bounds),arrowEdge:.top) {
+    settingsPopover
+     .presentationCompactAdaptation(.popover)
+   }
+  }
+ }
+
+ private var pointerModeBar:some View {
+  HStack(spacing:10) {
+   Text("指针")
+    .font(.caption.weight(.semibold))
+    .foregroundStyle(Color.secondary)
+    .textCase(.uppercase)
+
+   Picker("指针方式",selection:$pointerJoystick) {
+    Label("触控板",systemImage:"rectangle.and.hand.point.up.left").tag(false)
+    Label("指针摇杆",systemImage:"scope").tag(true)
+   }
+   .pickerStyle(.segmented)
+   .accessibilityLabel("指针方式")
+   .accessibilityIdentifier("pointer-mode-picker")
+  }
+  .padding(.leading,4)
+ }
+
+ private var settingsPopover:some View {
+  VStack(alignment:.leading,spacing:18) {
+   Text("Remote Settings")
+    .font(.headline)
+
+   VStack(alignment:.leading,spacing:8) {
+    HStack {
+     Label("指针灵敏度",systemImage:"cursorarrow.motionlines")
+     Spacer()
+     Text(String(format:"%.1fx",sensitivity))
+      .font(.system(.caption,design:.monospaced))
+      .foregroundStyle(Color.secondary)
+    }
+    Slider(value:$sensitivity,in:0.5...2.5,step:0.1)
+     .accessibilityLabel("指针灵敏度")
+     .accessibilityIdentifier("pointer-sensitivity")
+   }
+
+   Divider()
+
+   VStack(alignment:.leading,spacing:10) {
+    Label("布局",systemImage:"rectangle.split.2x1")
+     .font(.subheadline.weight(.semibold))
+    Button {
+     withAnimation(.snappy){swapped.toggle()}
+    } label:{
+     Label("交换指针与键盘位置",systemImage:"arrow.left.arrow.right")
+    }
+    .disabled(!keyboardVisible)
+    .accessibilityLabel("交换触控板和键盘")
+    .accessibilityIdentifier("swap-input-panels")
+
+    Button {
+     landscapeKeyboardShare=0.618
+     portraitTrackpadShare=0.618
+    } label:{
+     Label("恢复默认分屏比例",systemImage:"arrow.counterclockwise")
+    }
+    .disabled(!keyboardVisible)
+    .accessibilityIdentifier("reset-split-ratio")
+   }
+
+   Divider()
+
+   VStack(alignment:.leading,spacing:7) {
+    Label("连接",systemImage:"desktopcomputer")
+     .font(.subheadline.weight(.semibold))
+    LabeledContent("当前",value:peer.connectedPeerName ?? "未连接")
+    if let preferred=peer.preferredMacName {
+     LabeledContent("偏好设备",value:preferred)
+    }
+   }
+   .font(.footnote)
+
+   Divider()
+
+   VStack(alignment:.leading,spacing:6) {
+    Label("诊断",systemImage:"waveform.path.ecg")
+     .font(.subheadline.weight(.semibold))
+    Text(peer.statusText)
+    Text(peer.realtimeStatus)
+   }
+   .font(.system(.caption,design:.monospaced))
+   .foregroundStyle(Color.secondary)
+   .accessibilityIdentifier("connection-diagnostics")
+  }
+  .padding(20)
+  .frame(width:330)
  }
 
  @ViewBuilder private var pointerSurface:some View {
   if pointerJoystick {
-   AnalogPointerJoystick(sensitivity:sensitivity){vx,vy in peer.sendAnalogPointerUDP(vx:vx,vy:vy)}
-    .frame(maxWidth:.infinity,maxHeight:.infinity)
+   AnalogPointerJoystick(sensitivity:sensitivity){vx,vy in
+    peer.sendAnalogPointerUDP(vx:vx,vy:vy)
+   }
+   .frame(maxWidth:.infinity,maxHeight:.infinity)
   } else {
    trackpad
   }
@@ -99,18 +254,76 @@ struct iPadTrackpadView:View {
  private var trackpad:some View {
   TrackpadSurface(sensitivity:sensitivity,onMessage:peer.send,onRawMove:peer.sendPointerUDP)
    .frame(maxWidth:.infinity,maxHeight:.infinity)
-   .overlay(alignment:.bottomLeading){
-    if mode==0 {
-     Text("单指移动 · 轻点左键 · 双指轻点右键 · 双指滚动").font(.footnote).foregroundStyle(.secondary).padding(16).allowsHitTesting(false)
+   .background(Color.white.opacity(0.045),in:RoundedRectangle(cornerRadius:22,style:.continuous))
+   .overlay(
+    RoundedRectangle(cornerRadius:22,style:.continuous)
+     .stroke(Color.white.opacity(0.08),lineWidth:1)
+   )
+   .overlay(alignment:.bottomLeading) {
+    HStack(spacing:6) {
+     Image(systemName:"hand.draw")
+     Text("移动 · 点击 · 双指滚动")
     }
+    .font(.caption)
+    .foregroundStyle(Color.secondary.opacity(0.8))
+    .padding(16)
+    .allowsHitTesting(false)
    }
-   .clipped()
+   .clipShape(RoundedRectangle(cornerRadius:22,style:.continuous))
+   .accessibilityIdentifier("trackpad-surface")
  }
 
  private func keyboard(compact:Bool)->some View {
-  MacKeyboard(compact:compact,joystickArrows:joystickArrows){code,flags,isDown in peer.send(.key(code,flags,isDown))}
-   .frame(maxWidth:.infinity,maxHeight:.infinity)
-   .layoutPriority(1)
+  MacKeyboard(compact:compact,joystickArrows:$joystickArrows){code,flags,isDown in
+   peer.send(.key(code,flags,isDown))
+  }
+  .frame(maxWidth:.infinity,maxHeight:.infinity)
+  .layoutPriority(1)
+ }
+
+ private func selectMac(_ name:String) {
+  guard name != peer.connectedPeerName else{return}
+  manualSwitchTarget=name
+  switchSawDisconnect=false
+  connectionNotice=nil
+  peer.selectMac(named:name)
+ }
+
+ private func handleConnectionChange(_ newValue:String?) {
+  guard let target=manualSwitchTarget else{return}
+  if newValue == nil {
+   switchSawDisconnect=true
+   return
+  }
+  guard let newValue else{return}
+  if newValue == target {
+   manualSwitchTarget=nil
+   switchSawDisconnect=false
+   connectionNotice=nil
+  } else if switchSawDisconnect {
+   connectionNotice="无法连接 \(target)，已回到 \(newValue)"
+   manualSwitchTarget=nil
+   switchSawDisconnect=false
+  }
+ }
+}
+
+private struct ProUtilityButtonStyle:ButtonStyle {
+ var active=false
+
+ func makeBody(configuration:Configuration)->some View {
+  configuration.label
+   .foregroundStyle(active ? Color.accentColor:Color.primary)
+   .background(
+    (active ? Color.accentColor.opacity(0.14):Color.white.opacity(configuration.isPressed ? 0.10:0.06)),
+    in:RoundedRectangle(cornerRadius:11,style:.continuous)
+   )
+   .overlay(
+    RoundedRectangle(cornerRadius:11,style:.continuous)
+     .stroke(active ? Color.accentColor.opacity(0.24):Color.white.opacity(0.07),lineWidth:1)
+   )
+   .scaleEffect(configuration.isPressed ? 0.96:1)
+   .animation(.easeOut(duration:0.08),value:configuration.isPressed)
  }
 }
 
@@ -186,6 +399,7 @@ private struct AdaptiveInputSplit<Trackpad:View,Keyboard:View>:View {
    .onEnded { _ in dragging=false }
   )
   .accessibilityLabel("调整触控板和键盘比例")
+  .accessibilityIdentifier("split-handle")
  }
 }
 
@@ -195,7 +409,7 @@ private struct KeySpec:Identifiable {
 
 private struct MacKeyboard:View {
  let compact:Bool
- let joystickArrows:Bool
+ @Binding var joystickArrows:Bool
  let send:(UInt16,UInt64,Bool)->Void
  @State private var shift=false
  @State private var control=false
@@ -252,7 +466,8 @@ private struct MacKeyboard:View {
    }
    .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.center)
    .padding(padding)
-   .background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:18,style:.continuous))
+   .background(Color.white.opacity(0.045),in:RoundedRectangle(cornerRadius:20,style:.continuous))
+   .overlay(RoundedRectangle(cornerRadius:20,style:.continuous).stroke(Color.white.opacity(0.07),lineWidth:1))
   }
  }
 
@@ -295,13 +510,39 @@ private struct MacKeyboard:View {
    bottomFixedKey("",code:49,width:u*3.8,height:height,font:font)
    bottomFixedModifier("⌘",active:command,width:u*1.35,height:height,font:font){command.toggle()}
    bottomFixedModifier("⌥",active:option,width:u*1.25,height:height,font:font){option.toggle()}
-   if joystickArrows {
-    EightWayArrowJoystick(width:arrowWidth,height:height,send:send,flags:flags)
-   } else {
-    arrowCluster(side:arrowSide,height:height,font:font)
-   }
+   arrowModeZone(width:arrowWidth,height:height,side:arrowSide,font:font)
   }
   .frame(width:totalWidth,height:height)
+ }
+
+ private func arrowModeZone(width:CGFloat,height:CGFloat,side:CGFloat,font:CGFloat)->some View {
+  ZStack(alignment:.topTrailing) {
+   if joystickArrows {
+    EightWayArrowJoystick(width:width,height:height,send:send,flags:flags)
+   } else {
+    arrowCluster(side:side,height:height,font:font)
+   }
+
+   HStack(spacing:2) {
+    Button("Keys") { joystickArrows=false }
+     .foregroundStyle(!joystickArrows ? Color.primary:Color.secondary)
+     .padding(.horizontal,5)
+     .padding(.vertical,2)
+     .background(!joystickArrows ? Color.white.opacity(0.13):Color.clear,in:Capsule())
+    Button("Stick") { joystickArrows=true }
+     .foregroundStyle(joystickArrows ? Color.primary:Color.secondary)
+     .padding(.horizontal,5)
+     .padding(.vertical,2)
+     .background(joystickArrows ? Color.white.opacity(0.13):Color.clear,in:Capsule())
+   }
+   .font(.system(size:max(7,font*0.58),weight:.semibold,design:.rounded))
+   .padding(3)
+   .background(.ultraThinMaterial,in:Capsule())
+   .accessibilityElement(children:.contain)
+   .accessibilityLabel("方向键与八向摇杆切换")
+   .accessibilityIdentifier("arrow-mode-toggle")
+  }
+  .frame(width:width,height:height)
  }
 
  private func arrowCluster(side:CGFloat,height:CGFloat,font:CGFloat)->some View {
@@ -377,6 +618,52 @@ private struct MacKeyboard:View {
 }
 
 
+private struct JoystickSurface:View {
+ let diameter:CGFloat
+ let knobSize:CGFloat
+ let knob:CGSize
+ let deadZone:CGFloat
+ let showsDeadZone:Bool
+ let directionOpacity:Double
+
+ var body:some View {
+  ZStack {
+   Circle()
+    .fill(Color.white.opacity(0.055))
+    .overlay(Circle().stroke(Color.white.opacity(0.13),lineWidth:1))
+
+   if showsDeadZone {
+    Circle()
+     .fill(Color.white.opacity(0.028))
+     .overlay(Circle().stroke(Color.white.opacity(0.09),lineWidth:1))
+     .frame(width:diameter*deadZone*2,height:diameter*deadZone*2)
+   }
+
+   ForEach(0..<8,id:\.self) { i in
+    Image(systemName:"triangle.fill")
+     .font(.system(size:max(7,diameter*0.045),weight:.bold))
+     .foregroundStyle(Color.secondary.opacity(directionOpacity))
+     .offset(y:-diameter*0.40)
+     .rotationEffect(.degrees(Double(i)*45))
+   }
+
+   Circle()
+    .fill(
+     LinearGradient(
+      colors:[Color.white.opacity(0.28),Color.white.opacity(0.14)],
+      startPoint:.topLeading,
+      endPoint:.bottomTrailing
+     )
+    )
+    .overlay(Circle().stroke(Color.white.opacity(0.25),lineWidth:1))
+    .shadow(color:Color.black.opacity(0.28),radius:8,y:4)
+    .frame(width:knobSize,height:knobSize)
+    .offset(knob)
+  }
+  .frame(width:diameter,height:diameter)
+ }
+}
+
 private struct AnalogPointerJoystick:View {
  let sensitivity:Double
  let send:(Double,Double)->Void
@@ -391,27 +678,32 @@ private struct AnalogPointerJoystick:View {
    let knobSize=max(54,diameter*0.28)
    let radius=max(1,(diameter-knobSize)/2-8)
    ZStack {
-    RoundedRectangle(cornerRadius:18,style:.continuous).fill(Color.white.opacity(0.035))
-    Circle()
-     .fill(Color.white.opacity(0.08))
-     .overlay(Circle().stroke(Color.white.opacity(0.16),lineWidth:1))
-     .frame(width:diameter,height:diameter)
-    Circle()
-     .stroke(Color.white.opacity(0.12),style:StrokeStyle(lineWidth:1,dash:[5,5]))
-     .frame(width:diameter*deadZone*2,height:diameter*deadZone*2)
-    ForEach(0..<8,id:\.self) { i in
-     Image(systemName:"triangle.fill")
-      .font(.system(size:max(8,diameter*0.035),weight:.bold))
-      .foregroundStyle(Color.secondary.opacity(0.55))
-      .offset(y:-diameter*0.42)
-      .rotationEffect(.degrees(Double(i)*45))
+    RoundedRectangle(cornerRadius:22,style:.continuous)
+     .fill(Color.white.opacity(0.035))
+     .overlay(RoundedRectangle(cornerRadius:22,style:.continuous).stroke(Color.white.opacity(0.07),lineWidth:1))
+
+    JoystickSurface(
+     diameter:diameter,
+     knobSize:knobSize,
+     knob:knob,
+     deadZone:deadZone,
+     showsDeadZone:true,
+     directionOpacity:0.42
+    )
+    .animation(.interactiveSpring(response:0.12,dampingFraction:0.82),value:knob)
+
+    VStack {
+     Spacer()
+     HStack(spacing:6) {
+      Text("Precision")
+      Capsule().fill(Color.secondary.opacity(0.25)).frame(width:42,height:2)
+      Text("Speed")
+     }
+     .font(.caption2.weight(.medium))
+     .foregroundStyle(Color.secondary.opacity(0.65))
+     .padding(.bottom,14)
     }
-    Circle()
-     .fill(Color.white.opacity(0.22))
-     .overlay(Circle().stroke(Color.white.opacity(0.28),lineWidth:1))
-     .frame(width:knobSize,height:knobSize)
-     .offset(knob)
-     .animation(.interactiveSpring(response:0.12,dampingFraction:0.82),value:knob)
+    .allowsHitTesting(false)
    }
    .contentShape(Rectangle())
    .gesture(
@@ -425,14 +717,15 @@ private struct AnalogPointerJoystick:View {
   }
   .onDisappear { stop() }
   .accessibilityLabel("模拟量指针摇杆")
+  .accessibilityIdentifier("pointer-joystick")
  }
 
  private func update(dx:CGFloat,dy:CGFloat,radius:CGFloat){
   let distance=sqrt(dx*dx+dy*dy)
-  let scale=distance>radius ? radius/distance : 1
+  let scale=distance > radius ? radius/distance : 1
   knob=CGSize(width:dx*scale,height:dy*scale)
   let normalized=min(1,distance/radius)
-  guard normalized>deadZone else {
+  guard normalized > deadZone else {
    velocity = .zero
    stopTimerOnly()
    return
@@ -485,24 +778,14 @@ private struct EightWayArrowJoystick:View {
    let diameter=min(geo.size.width,geo.size.height)
    let knobSize=max(18,diameter*0.34)
    let radius=max(1,(diameter-knobSize)/2-3)
-   ZStack {
-    Circle()
-     .fill(Color.white.opacity(0.08))
-     .overlay(Circle().stroke(Color.white.opacity(0.16),lineWidth:1))
-    ForEach(0..<8,id:\.self) { i in
-     Image(systemName:"triangle.fill")
-      .font(.system(size:max(7,diameter*0.08),weight:.bold))
-      .foregroundStyle(Color.secondary.opacity(0.7))
-      .offset(y:-diameter*0.34)
-      .rotationEffect(.degrees(Double(i)*45))
-    }
-    Circle()
-     .fill(Color.white.opacity(0.22))
-     .overlay(Circle().stroke(Color.white.opacity(0.24),lineWidth:1))
-     .frame(width:knobSize,height:knobSize)
-     .offset(knob)
-   }
-   .frame(width:diameter,height:diameter)
+   JoystickSurface(
+    diameter:diameter,
+    knobSize:knobSize,
+    knob:knob,
+    deadZone:0.12,
+    showsDeadZone:true,
+    directionOpacity:0.62
+   )
    .position(x:geo.size.width/2,y:geo.size.height/2)
    .contentShape(Rectangle())
    .gesture(
@@ -532,6 +815,7 @@ private struct EightWayArrowJoystick:View {
   .frame(width:width,height:height)
   .onDisappear { releaseActiveKeys() }
   .accessibilityLabel("八向方向摇杆")
+  .accessibilityIdentifier("arrow-joystick")
  }
 
  private func updateDirection(_ direction:Int?) {
@@ -600,8 +884,8 @@ private struct KeyLifecycleButton<Label:View>:View {
   label
    .foregroundStyle(Color.primary)
    .background(Color.white.opacity(pressed ? 0.22:0.12))
-   .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
-   .overlay(RoundedRectangle(cornerRadius:7,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
+   .clipShape(RoundedRectangle(cornerRadius:8,style:.continuous))
+   .overlay(RoundedRectangle(cornerRadius:8,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
    .scaleEffect(pressed ? 0.96:1)
    .animation(.easeOut(duration:0.06),value:pressed)
    .contentShape(Rectangle())
@@ -642,8 +926,8 @@ private struct KeyboardKeyStyle:ButtonStyle {
   configuration.label
    .foregroundStyle(Color.primary)
    .background(active ? Color.accentColor.opacity(0.75) : Color.white.opacity(configuration.isPressed ? 0.22 : 0.12))
-   .clipShape(RoundedRectangle(cornerRadius:7,style:.continuous))
-   .overlay(RoundedRectangle(cornerRadius:7,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
+   .clipShape(RoundedRectangle(cornerRadius:8,style:.continuous))
+   .overlay(RoundedRectangle(cornerRadius:8,style:.continuous).stroke(Color.white.opacity(0.12),lineWidth:1))
    .scaleEffect(configuration.isPressed ? 0.96 : 1)
    .animation(.easeOut(duration:0.06),value:configuration.isPressed)
  }
