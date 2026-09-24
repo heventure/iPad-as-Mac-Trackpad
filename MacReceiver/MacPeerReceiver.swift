@@ -160,11 +160,23 @@ import Darwin
  }
 
  nonisolated private func handleUDPPacket(_ data:Data){
-  guard data.count==9,data[0]==1 else{return}
+  guard data.count==9 else{return}
   let b=[UInt8](data)
   let xBits=UInt32(b[1]) | UInt32(b[2])<<8 | UInt32(b[3])<<16 | UInt32(b[4])<<24
   let yBits=UInt32(b[5]) | UInt32(b[6])<<8 | UInt32(b[7])<<16 | UInt32(b[8])<<24
-  MouseController.handle(.move(dx:Double(Float32(bitPattern:xBits)),dy:Double(Float32(bitPattern:yBits))))
+  let x=Double(Float32(bitPattern:xBits))
+  let y=Double(Float32(bitPattern:yBits))
+  switch data[0] {
+  case 1:
+   MouseController.handle(.move(dx:x,dy:y))
+  case 2:
+   // One datagram is one 60 Hz velocity sample. No receiver-side state means
+   // duplicate/out-of-order UDP packets can only add one bounded movement step.
+   let maxPointsPerSecond=900.0
+   let step=maxPointsPerSecond/60.0
+   MouseController.handle(.move(dx:x*step,dy:y*step))
+  default:return
+  }
   Task{@MainActor in
    self.udpPacketCount += 1
    if self.udpPacketCount == 1 || self.udpPacketCount % 100 == 0 { self.realtimeStatus="UDP: 已收到 \(self.udpPacketCount) 个指针包" }
