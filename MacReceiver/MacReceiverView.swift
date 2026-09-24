@@ -15,7 +15,7 @@ struct MacReceiverView:View {
    footer
   }
   .padding(22)
-  .frame(minWidth:440,minHeight:330)
+  .frame(width:440,height:330)
   .background(
    LinearGradient(
     colors:[Color.black,Color(white:0.06)],
@@ -23,6 +23,7 @@ struct MacReceiverView:View {
     endPoint:.bottomTrailing
    ).ignoresSafeArea()
   )
+  .preferredColorScheme(.dark)
   .onAppear {
    accessibilityGranted=MouseController.hasAccessibilityPermission
    if !accessibilityGranted {
